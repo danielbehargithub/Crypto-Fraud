@@ -34,6 +34,7 @@ nodes_df['class'] = nodes_df['class'].map(label_map)
 y = torch.tensor(nodes_df['class'].astype(int).values, dtype=torch.long)
 
 
+
 # שלב 1: הגדר את אינדקסים של רק הדוגמאות עם תווית ידועה (לא unknown)
 labeled_mask = y >= 0
 labeled_idx = labeled_mask.nonzero(as_tuple=True)[0]
