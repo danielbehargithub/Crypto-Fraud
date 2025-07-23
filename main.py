@@ -3,6 +3,7 @@ import networkx as nx
 import torch
 from torch_geometric.data import Data
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, f1_score, precision_score, recall_score
 
 nodes_column_names = ['txId', 'time_step'] + [f'feature_{i}' for i in range(1, 166)]
 
@@ -98,13 +99,7 @@ def test(model, data):
     model.eval()
     out = model(data.x, data.edge_index)
     pred = out.argmax(dim=1)
-
-    accs = []
-    for mask in [data.train_mask, data.val_mask, data.test_mask]:
-        correct = pred[mask] == data.y[mask]
-        acc = int(correct.sum()) / int(mask.sum())
-        accs.append(acc)
-    return accs  # [train_acc, val_acc, test_acc]
+    return pred
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -114,14 +109,37 @@ model = GCN(in_channels=data.num_node_features, hidden_channels=64, out_channels
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
 criterion = nn.CrossEntropyLoss()
 
-best_val_acc = 0
+best_val_f1 = 0
 for epoch in range(1, 201):
     loss = train(model, data, optimizer, criterion)
-    train_acc, val_acc, test_acc = test(model, data)
-    if val_acc > best_val_acc:
-        best_val_acc = val_acc
-        best_test_acc = test_acc
-    if epoch % 10 == 0 or epoch == 1:
-        print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Val: {val_acc:.4f}, Test: {test_acc:.4f}')
 
-print(f'Best Val Acc: {best_val_acc:.4f}, Test Acc at best Val: {best_test_acc:.4f}')
+    pred = test(model, data)
+
+    # חישוב F1 רק על סט אימות
+    val_true = data.y[data.val_mask].cpu().numpy()
+    val_pred = pred[data.val_mask].cpu().numpy()
+    val_f1 = f1_score(val_true, val_pred, average='binary', pos_label=1)
+
+    # אותו הדבר לסט בדיקה רק בשביל ההדפסה
+    test_true = data.y[data.test_mask].cpu().numpy()
+    test_pred = pred[data.test_mask].cpu().numpy()
+    test_f1 = f1_score(test_true, test_pred, average='binary', pos_label=1)
+
+    if val_f1 > best_val_f1:
+        best_val_f1 = val_f1
+        best_test_f1 = test_f1
+
+    if epoch % 10 == 0 or epoch == 1:
+        print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Val F1: {val_f1:.4f}, Test F1: {test_f1:.4f}')
+
+print(f'Best Val F1: {best_val_f1:.4f}, Test F1 at best Val: {best_test_f1:.4f}')
+
+# תחזית סופית מהמודל המאומן
+final_pred = test(model, data)
+
+# דיווח מלא על סט הבדיקה
+test_true = data.y[data.test_mask].cpu().numpy()
+test_pred = final_pred[data.test_mask].cpu().numpy()
+
+print("\nClassification Report on Test Set:")
+print(classification_report(test_true, test_pred, target_names=["Licit", "Illicit"]))
