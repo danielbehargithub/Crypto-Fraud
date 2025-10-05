@@ -28,9 +28,13 @@ edges_df['src'] = edges_df['txId1'].map(txid_to_idx)
 edges_df['dst'] = edges_df['txId2'].map(txid_to_idx)
 edge_index = torch.tensor(edges_df[['src', 'dst']].values.T, dtype=torch.long)
 
-# Prepare node features
+# --- Feature subsets for two runs ---
 feature_cols = [f'feature_{i}' for i in range(1, 166)]
-x = torch.tensor(nodes_df[feature_cols].values, dtype=torch.float)
+feature_cols_all = feature_cols
+feature_cols_local = feature_cols[:94]
+
+x_all = torch.tensor(nodes_df[feature_cols_all].values, dtype=torch.float)
+x_local = torch.tensor(nodes_df[feature_cols_local].values, dtype=torch.float)
 
 # Ensure the "class" column is string, then map to integers
 nodes_df['class'] = nodes_df['class'].astype(str)
@@ -58,8 +62,17 @@ val_mask[val_idx] = True
 test_mask[test_idx] = True
 
 # Combine all into a single PyG Data object
-data = Data(
-    x=x,
+data_all = Data(
+    x=x_all,
+    edge_index=edge_index,
+    y=y,
+    train_mask=train_mask,
+    val_mask=val_mask,
+    test_mask=test_mask
+)
+
+data_local = Data(
+    x=x_local,
     edge_index=edge_index,
     y=y,
     train_mask=train_mask,
@@ -102,65 +115,66 @@ def test(model, data):
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-data = data.to(device)
+data_all = data_all.to(device)
+data_local = data_local.to(device)
 
-# Model, optimizer, and loss setup
-model = GCN(in_channels=data.num_node_features, hidden_channels=64, out_channels=2).to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.02, weight_decay=5e-4)
-criterion = nn.CrossEntropyLoss()
+def run_one(data, tag):
+    print(f"\n===== RUN: {tag} =====")
+    model = GCN(in_channels=data.num_node_features, hidden_channels=64, out_channels=2).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.02, weight_decay=5e-4)
+    criterion = nn.CrossEntropyLoss()
 
-EPS = 0.0002
-scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=10, min_lr=0.002)
-best_val_f1 = -1.0
-best_test_f1 = 0.0
-patience = 30
-no_improve = 0
-max_epochs = 1000
-prev_lr = optimizer.param_groups[0]['lr']
+    EPS = 0.0002
+    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=10, min_lr=0.002)
+    best_val_f1 = -1.0
+    best_test_f1 = 0.0
+    patience = 30
+    no_improve = 0
+    max_epochs = 1000
+    prev_lr = optimizer.param_groups[0]['lr']
 
-for epoch in range(0, max_epochs):
-    loss = train(model, data, optimizer, criterion)
-    pred = test(model, data)
+    for epoch in range(0, max_epochs):
+        loss = train(model, data, optimizer, criterion)
+        pred = test(model, data)
 
-    # Compute F1 for validation set
-    val_true = data.y[data.val_mask].cpu().numpy()
-    val_pred = pred[data.val_mask].cpu().numpy()
-    val_f1 = f1_score(val_true, val_pred, average='binary', pos_label=1)
+        val_true = data.y[data.val_mask].cpu().numpy()
+        val_pred = pred[data.val_mask].cpu().numpy()
+        val_f1 = f1_score(val_true, val_pred, average='binary', pos_label=1)
 
-    # Compute F1 for test set (for monitoring only)
+        test_true = data.y[data.test_mask].cpu().numpy()
+        test_pred = pred[data.test_mask].cpu().numpy()
+        test_f1 = f1_score(test_true, test_pred, average='binary', pos_label=1)
+
+        improved = (val_f1 - best_val_f1) >= EPS
+        if improved:
+            best_val_f1 = val_f1
+            best_test_f1 = test_f1
+            no_improve = 0
+        else:
+            no_improve += 1
+            if no_improve >= patience:
+                print(f"Early stopping at epoch {epoch}. Best Val F1={best_val_f1:.4f}, "
+                      f"Test F1 at best Val={best_test_f1:.4f}")
+                break
+
+        scheduler.step(val_f1)
+        current_lr = optimizer.param_groups[0]['lr']
+        if epoch > 0 and current_lr != prev_lr:
+            print(f"🔻 LR reduced at epoch {epoch}: now {current_lr:.6f}")
+        prev_lr = current_lr
+
+        if epoch % 20 == 0 or epoch == 0:
+            print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Val F1: {val_f1:.4f}, Test F1: {test_f1:.4f}')
+
+    print(f'[{tag}] Best Val F1: {best_val_f1:.4f}, Test F1 at best Val: {best_test_f1:.4f}')
+
+    # Final report
+    final_pred = test(model, data)
     test_true = data.y[data.test_mask].cpu().numpy()
-    test_pred = pred[data.test_mask].cpu().numpy()
-    test_f1 = f1_score(test_true, test_pred, average='binary', pos_label=1)
+    test_pred = final_pred[data.test_mask].cpu().numpy()
+    print(f"\n[{tag}] Classification Report on Test Set:")
+    print(classification_report(test_true, test_pred, target_names=['Licit','Illicit']))
 
-    improved = (val_f1 - best_val_f1) >= EPS
-    if improved:
-        best_val_f1 = val_f1
-        best_test_f1 = test_f1
-        no_improve = 0
-    else:
-        no_improve += 1
-        if no_improve >= patience:
-            print(f"Early stopping at epoch {epoch}. Best Val F1={best_val_f1:.4f}, "
-                  f"Test F1 at best Val={best_test_f1:.4f}")
-            break
+run_one(data_all,   tag="ALL FEATURES (local+aggregated)")
+run_one(data_local, tag="LOCAL-ONLY (first 94)")
 
-    scheduler.step(val_f1)
-    current_lr = optimizer.param_groups[0]['lr']
-    if epoch > 0 and current_lr != prev_lr:
-        print(f"🔻 LR reduced at epoch {epoch}: now {current_lr:.6f}")
-    prev_lr = current_lr
-
-    if epoch % 20 == 0 or epoch == 0:
-        print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Val F1: {val_f1:.4f}, Test F1: {test_f1:.4f}')
-
-print(f'Best Val F1: {best_val_f1:.4f}, Test F1 at best Val: {best_test_f1:.4f}')
-
-# Final predictions from the trained model
-final_pred = test(model, data)
-
-# Full test-set classification report
-test_true = data.y[data.test_mask].cpu().numpy()
-test_pred = final_pred[data.test_mask].cpu().numpy()
-
-print("\nClassification Report on Test Set:")
-print(classification_report(test_true, test_pred, target_names=["Licit", "Illicit"]))
