@@ -113,14 +113,40 @@ def test(model, data):
     pred = out.argmax(dim=1)
     return pred
 
+# baseline MLP- no graph data
+class MLP(nn.Module):
+    """Simple 3-layer MLP for node classification (ignores edges)."""
+    def __init__(self, in_channels, hidden1=128, hidden2=64, out_channels=2, dropout=0.5):
+        super().__init__()
+        self.fc1 = nn.Linear(in_channels, hidden1)
+        self.fc2 = nn.Linear(hidden1, hidden2)
+        self.fc3 = nn.Linear(hidden2, out_channels)
+        self.dropout = dropout
+
+    def forward(self, x, edge_index=None):  # edge_index ignored for compatibility
+        x = F.relu(self.fc1(x))
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = F.relu(self.fc2(x))
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.fc3(x)
+        return x
+
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 data_all = data_all.to(device)
 data_local = data_local.to(device)
 
-def run_one(data, tag):
+def run(data, tag, model_name='GCN'):
     print(f"\n===== RUN: {tag} =====")
-    model = GCN(in_channels=data.num_node_features, hidden_channels=64, out_channels=2).to(device)
+    if model_name == 'GCN':
+        model = GCN(in_channels=data.num_node_features, hidden_channels=64, out_channels=2).to(device)
+        warmup_start = 10  # patience counter starts only after this epoch
+        scheduler_warmup = True
+    else:
+        model = MLP(in_channels=data.num_node_features, hidden1=128, hidden2=64, out_channels=2).to(device)
+        warmup_start = 50  # needs more time
+        scheduler_warmup = False
+
     optimizer = torch.optim.Adam(model.parameters(), lr=0.02, weight_decay=5e-4)
     criterion = nn.CrossEntropyLoss()
 
@@ -151,13 +177,15 @@ def run_one(data, tag):
             best_test_f1 = test_f1
             no_improve = 0
         else:
-            no_improve += 1
+            if epoch >= warmup_start:
+                no_improve += 1
             if no_improve >= patience:
                 print(f"Early stopping at epoch {epoch}. Best Val F1={best_val_f1:.4f}, "
                       f"Test F1 at best Val={best_test_f1:.4f}")
                 break
 
-        scheduler.step(val_f1)
+        if scheduler_warmup or epoch >= warmup_start:
+            scheduler.step(val_f1)
         current_lr = optimizer.param_groups[0]['lr']
         if epoch > 0 and current_lr != prev_lr:
             print(f"🔻 LR reduced at epoch {epoch}: now {current_lr:.6f}")
@@ -166,7 +194,18 @@ def run_one(data, tag):
         if epoch % 20 == 0 or epoch == 0:
             print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Val F1: {val_f1:.4f}, Test F1: {test_f1:.4f}')
 
+
     print(f'[{tag}] Best Val F1: {best_val_f1:.4f}, Test F1 at best Val: {best_test_f1:.4f}')
+
+    summary = {
+        "tag": tag,
+        "model": model_name.upper(),
+        "in_channels": data.num_node_features,
+        "best_val_f1": round(best_val_f1, 4),
+        "test_f1_at_best": round(best_test_f1, 4),
+        "stop_epoch": epoch,
+        "final_lr": optimizer.param_groups[0]['lr'],
+    }
 
     # Final report
     final_pred = test(model, data)
@@ -175,6 +214,25 @@ def run_one(data, tag):
     print(f"\n[{tag}] Classification Report on Test Set:")
     print(classification_report(test_true, test_pred, target_names=['Licit','Illicit']))
 
-run_one(data_all,   tag="ALL FEATURES (local+aggregated)")
-run_one(data_local, tag="LOCAL-ONLY (first 94)")
+    return summary
 
+
+# run(data_all,   tag="GCN: ALL FEATURES (local+aggregated)", model_name='GCN')
+# run(data_local, tag="GCN:LOCAL-ONLY (first 94)", model_name='GCN')
+#
+# run(data_all,   tag="MLP: ALL FEATURES (local+aggregated)", model_name='MLP')
+# run(data_local, tag="MLP: LOCAL-ONLY (first 94)", model_name='MLP')
+
+summaries = []
+summaries.append(run(data_all,   tag="GCN: ALL FEATURES (local+aggregated)", model_name='GCN'))
+summaries.append(run(data_local, tag="GCN: LOCAL-ONLY (first 94)",           model_name='GCN'))
+summaries.append(run(data_all,   tag="MLP: ALL FEATURES (local+aggregated)", model_name='MLP'))
+summaries.append(run(data_local, tag="MLP: LOCAL-ONLY (first 94)",           model_name='MLP'))
+
+df = pd.DataFrame(summaries)[
+    ["model", "tag", "in_channels", "best_val_f1", "test_f1_at_best", "stop_epoch", "final_lr"]
+]
+print("\n=== Summary Table ===")
+print(df.to_string(index=False))
+# Optional: save for future runs
+df.to_csv("run_summary.csv", index=False)
