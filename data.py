@@ -7,6 +7,7 @@ import pandas as pd
 import torch
 from torch_geometric.data import Data
 from sklearn.model_selection import train_test_split
+from torch_geometric.utils import to_undirected, remove_self_loops, coalesce
 
 
 # --- Constants / column names ---
@@ -41,14 +42,22 @@ def build_index_map(nodes_df: pd.DataFrame):
     return nodes_df, txid_to_idx
 
 
-def build_edge_index(edges_df: pd.DataFrame, txid_to_idx: dict) -> torch.Tensor:
-    """Map edgelist txId1/txId2 to node indices and build edge_index (directed, as-is)."""
-    edges_df = edges_df.copy()
-    edges_df['src'] = edges_df['txId1'].map(txid_to_idx)
-    edges_df['dst'] = edges_df['txId2'].map(txid_to_idx)
-    # Drop edges that could not be mapped (safety)
-    edges_df = edges_df.dropna(subset=['src', 'dst'])
-    edge_index = torch.tensor(edges_df[['src', 'dst']].values.T, dtype=torch.long)
+def build_edge_index(edges_df: pd.DataFrame, txid_to_idx: dict, num_nodes: int, make_undirected: bool) -> torch.Tensor:
+    """Map edgelist to node indices and build edge_index, optionally undirected."""
+    df = edges_df.copy()
+    df['src'] = df['txId1'].map(txid_to_idx)
+    df['dst'] = df['txId2'].map(txid_to_idx)
+    # Drop edges that could not be mapped
+    df = df.dropna(subset=['src', 'dst'])
+    edge_index = torch.tensor(df[['src', 'dst']].values.T, dtype=torch.long)
+
+    # Make undirected if requested (bidirectional edges)
+    if make_undirected:
+        edge_index = to_undirected(edge_index, num_nodes=num_nodes)
+
+    # Clean up: remove self-loops and coalesce duplicates
+    edge_index, _ = remove_self_loops(edge_index)
+    edge_index = coalesce(edge_index, num_nodes=num_nodes)
     return edge_index
 
 
@@ -115,36 +124,51 @@ def make_data(x_tensor: torch.Tensor, edge_index: torch.Tensor, y_tensor: torch.
     return data
 
 
+# data.py — drop-in replacement for get_variants()
+
 def get_variants(
-    features_set_options = ('all', 'local'),
-    split_type_options = ('temporal', 'random'),
+    *,
+    graph_modes: Tuple[str, ...] = ("dag", "undirected"),
     device: torch.device = None,
-) -> Dict[Tuple[str, str], Data]:
-    """Build (features_set, split_type) -> Data dict, moved to device."""
+) -> Dict[Tuple[str, str, str], Data]:
+    """Return a dict keyed by (graph_mode, features_set, split_type).
+    graph_mode in {"dag", "undirected"} controls whether we symmetrize edges.
+    """
+    # Load and prepare node/label tables once
     nodes_df, edges_df, _ = load_raw()
     nodes_df, txid_to_idx = build_index_map(nodes_df)
-    edge_index = build_edge_index(edges_df, txid_to_idx)
+    num_nodes = len(nodes_df)
+
+    # Labels (shared across modes)
     y = map_labels(nodes_df)
 
-    # Feature matrices
-    x_all = torch.tensor(nodes_df[FEATURE_COLS_ALL].values, dtype=torch.float)
+    # Features (shared across modes)
+    x_all   = torch.tensor(nodes_df[FEATURE_COLS_ALL].values,   dtype=torch.float)
     x_local = torch.tensor(nodes_df[FEATURE_COLS_LOCAL].values, dtype=torch.float)
 
-    # Masks
+    # Masks (shared across modes)
     masks_temporal = make_masks_temporal(nodes_df, y)
     masks_random   = make_masks_random(nodes_df, y, test_size=0.3, val_frac_of_test=0.5, seed=42)
 
-    data_variants: Dict[Tuple[str, str], Data] = {
-        ('all',   'temporal'): make_data(x_all,   edge_index, y, masks_temporal),
-        ('local', 'temporal'): make_data(x_local, edge_index, y, masks_temporal),
-        ('all',   'random'):   make_data(x_all,   edge_index, y, masks_random),
-        ('local', 'random'):   make_data(x_local, edge_index, y, masks_random),
-    }
+    out: Dict[Tuple[str, str, str], Data] = {}
 
-    # Move to device
+    for graph_mode in graph_modes:
+        # Build edge_index per mode
+        make_undirected = (graph_mode == "undirected")
+        edge_index = build_edge_index(
+            edges_df, txid_to_idx, num_nodes=num_nodes, make_undirected=make_undirected
+        )
+
+        # Assemble 4 variants for this graph_mode
+        out[(graph_mode, 'all',   'temporal')] = make_data(x_all,   edge_index, y, masks_temporal)
+        out[(graph_mode, 'local', 'temporal')] = make_data(x_local, edge_index, y, masks_temporal)
+        out[(graph_mode, 'all',   'random')]   = make_data(x_all,   edge_index, y, masks_random)
+        out[(graph_mode, 'local', 'random')]   = make_data(x_local, edge_index, y, masks_random)
+
+    # Move all to device once at the end
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    for k in list(data_variants.keys()):
-        data_variants[k] = data_variants[k].to(device)
+    for k in list(out.keys()):
+        out[k] = out[k].to(device)
 
-    return data_variants
+    return out

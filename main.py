@@ -89,9 +89,9 @@ def pick_by_entropy(entropy: torch.Tensor, candidate_idx: torch.Tensor, k: int) 
 
 
 # ==== Runner: unchanged logic, but returns richer summary ====
-def run(data, model_name, features_set, split_type):
+def run(data, model_name, features_set, split_type, graph_mode):
     device = data.x.device  # ensure model/device match the data tensors
-    tag = f"{model_name.upper()} | {features_set.upper()} | {split_type.upper()}"
+    tag = f"{model_name.upper()} | {features_set.upper()} | {split_type.upper()} | {graph_mode.upper()}"
     print(f"\n===== RUN: {tag} =====")
     if model_name.upper() == 'GCN':
         model = GCN(in_channels=data.num_node_features, hidden_channels=64, out_channels=2).to(device)
@@ -162,6 +162,7 @@ def run(data, model_name, features_set, split_type):
         "model": model_name.upper(),
         "features_set": features_set,     # 'local' or 'all'
         "split_type": split_type,         # 'temporal' or 'random'
+        "graph_mode": graph_mode,
         "in_channels": int(data.num_node_features),
         "best_val_f1": round(float(best_val_f1), 4),
         "test_f1_at_best": round(float(best_test_f1), 4),
@@ -175,6 +176,7 @@ def run_active_learning(
     model_name: str,
     features_set: str,
     split_type: str,
+    graph_mode: str,
     seed_per_class: int = 10,
     batch_size: int = 50,
     budget: int = 200,
@@ -185,7 +187,7 @@ def run_active_learning(
     Minimal pool-based Active Learning with entropy uncertainty on train split.
     We simulate labeling by gradually revealing labels from the existing train set (y!=-1).
     """
-    tag = f"AL | {model_name.upper()} | {features_set.upper()} | {split_type.upper()}"
+    tag = f"{model_name.upper()} | {features_set.upper()} | {split_type.upper()} | {graph_mode.upper()}"
     print(f"\n===== RUN (Active Learning): {tag} =====")
 
     device = data.x.device
@@ -317,6 +319,7 @@ def run_active_learning(
         "model": f"AL-{model_name.upper()}",
         "features_set": features_set,
         "split_type": split_type,
+        "graph_mode": graph_mode,
         "in_channels": int(data.num_node_features),
         "best_val_f1": round(float(best_val_f1_overall), 4),
         "test_f1_at_best": round(float(best_test_f1_at_best), 4),
@@ -325,40 +328,50 @@ def run_active_learning(
 
 
 
-data_variants = get_variants()
+def main():
+    # Ask for both modes in one call; you can choose ("dag",) or ("undirected",) too
 
-# ==== Full grid of runs: 2 models × 2 feature sets × 2 splits ====
-summaries = []
-for model_name in ['GCN', 'MLP']:
-    for features_set in ['all', 'local']:
-        for split_type in ['temporal', 'random']:
-            data_obj = data_variants[(features_set, split_type)]
-            summaries.append(run(data_obj, model_name, features_set, split_type))
+    # Choose subsets here:
+    graph_modes  = ["dag", "undirected"]   # or ["dag"] or ["undirected"]
+    model_names  = ["GCN"]                  # e.g., ["GCN"] to run only GCN. MLP available
+    feature_sets = ["local"]                # e.g., ["local"] to run only LOCAL. all available
+    split_types  = ["temporal"]             # e.g., ["temporal"] to run only TEMPORAL. random available
+    data_variants = get_variants()
 
-# Collect to DataFrame
-df = pd.DataFrame(summaries)[
-    ["model", "features_set", "split_type", "in_channels",
-     "best_val_f1", "test_f1_at_best", "stop_epoch", "final_lr"]
-]
+    rows = []
+    for gm in graph_modes:
+        for model_name in model_names:
+            for fset in feature_sets:
+                for split in split_types:
+                    data_obj = data_variants[(gm, fset, split)]
+                    row = run(data_obj, model_name, fset, split, gm)
+                    rows.append(row)
 
-print("\n=== Summary Table (all runs) ===")
-print(df.to_string(index=False))
 
-out_path = "run_summary_all.csv"
-df.to_csv(out_path, index=False)
-print(f"Saved: {out_path}")
+    df = pd.DataFrame(rows)[
+        ["graph_mode", "model", "features_set", "split_type",
+         "in_channels", "best_val_f1", "test_f1_at_best", "stop_epoch", "final_lr"]
+    ]
+    print("\n=== Summary Table (all runs) ===")
+    print(df.to_string(index=False))
+    df.to_csv("run_summary.csv", index=False)
+    print("Saved: run_summary.csv")
 
-# ===== Example: one AL run (GCN, all features, temporal split) =====
-# al_summary = run_active_learning(
-#     data=data_variants[('all', 'temporal')],
-#     model_name='GCN',
-#     features_set='all',
-#     split_type='temporal',
-#     seed_per_class=10,   # starting labeled per class
-#     batch_size=50,       # acquired per round
-#     budget=200,          # total acquired across rounds
-#     max_epochs_per_round=100,
-#     rng_seed=42
-# )
-# print("\n=== Active Learning Summary ===")
-# print(al_summary)
+    # al_summary = run_active_learning(
+    #     data=data_variants[('all', 'temporal')],
+    #     model_name='GCN',
+    #     features_set='all',
+    #     split_type='temporal',
+    #     seed_per_class=10,   # starting labeled per class
+    #     batch_size=50,       # acquired per round
+    #     budget=200,          # total acquired across rounds
+    #     max_epochs_per_round=100,
+    #     rng_seed=42
+    # )
+    # print("\n=== Active Learning Summary ===")
+    # print(al_summary)
+
+if __name__ == "__main__":
+    main()
+
+

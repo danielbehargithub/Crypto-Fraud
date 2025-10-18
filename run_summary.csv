@@ -1,0 +1,3 @@
+graph_mode,model,features_set,split_type,in_channels,best_val_f1,test_f1_at_best,stop_epoch,final_lr
+dag,GCN,local,temporal,94,0.5158,0.3357,168,0.002
+undirected,GCN,local,temporal,94,0.6199,0.3615,154,0.002
