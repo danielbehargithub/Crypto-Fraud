@@ -128,9 +128,11 @@ def make_data(x_tensor: torch.Tensor, edge_index: torch.Tensor, y_tensor: torch.
 
 def get_variants(
     *,
-    graph_modes: Tuple[str, ...] = ("dag", "undirected"),
-    device: torch.device = None,
-) -> Dict[Tuple[str, str, str], Data]:
+    graph_modes=("dag", "undirected"),
+    feature_sets=("all", "local"),
+    split_types=("temporal", "random"),
+    device=None,
+):
     """Return a dict keyed by (graph_mode, features_set, split_type).
     graph_mode in {"dag", "undirected"} controls whether we symmetrize edges.
     """
