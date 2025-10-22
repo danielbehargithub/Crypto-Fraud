@@ -6,6 +6,8 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.metrics import f1_score
 from torch_geometric.data import Data
 from models import GCN, MLP
+from training import train, test
+
 
 @torch.no_grad()
 def compute_entropy(logits: torch.Tensor) -> torch.Tensor:
@@ -55,6 +57,7 @@ def run_active_learning(
     pool_idx = full_train_idx[labeled_filter[full_train_idx]]
 
     # Stratified seed: pick seed_per_class per class from pool (if possible)
+    # attention-for now picks same 20 every time
     rng = torch.Generator(device='cpu').manual_seed(rng_seed)
     labeled_idx_list = []
     for cls in torch.unique(y_all[pool_idx]):
@@ -101,25 +104,15 @@ def run_active_learning(
         best_test_f1 = 0.0
 
         for epoch in range(max_epochs_per_round):
-            # Train on dynamic mask
-            model.train()
-            optimizer.zero_grad()
-            logits = model(data.x, data.edge_index)
-            loss = criterion(logits[dyn_train_mask], y_all[dyn_train_mask])
-            loss.backward()
-            optimizer.step()
+            loss = train(model, data, optimizer, criterion, dyn_train_mask)
+            pred = test(model, data)
+            val_true = y_all[data.val_mask].detach().cpu().numpy()
+            val_pred = pred[data.val_mask].detach().cpu().numpy()
+            val_f1 = f1_score(val_true, val_pred, average='binary', pos_label=1)
 
-            # Eval
-            model.eval()
-            with torch.no_grad():
-                logits = model(data.x, data.edge_index)
-                pred = logits.argmax(dim=1)
-                val_true = y_all[data.val_mask].detach().cpu().numpy()
-                val_pred = pred[data.val_mask].detach().cpu().numpy()
-                val_f1 = f1_score(val_true, val_pred, average='binary', pos_label=1)
-                test_true = y_all[data.test_mask].detach().cpu().numpy()
-                test_pred = pred[data.test_mask].detach().cpu().numpy()
-                test_f1 = f1_score(test_true, test_pred, average='binary', pos_label=1)
+            test_true = y_all[data.test_mask].detach().cpu().numpy()
+            test_pred = pred[data.test_mask].detach().cpu().numpy()
+            test_f1 = f1_score(test_true, test_pred, average='binary', pos_label=1)
 
             improved = (val_f1 - best_val_f1) >= EPS
             if improved:

@@ -7,11 +7,11 @@ from models import GCN, MLP
 
 
 # Training function
-def train(model, data, optimizer, criterion):
+def train(model, data, optimizer, criterion, mask):
     model.train()
     optimizer.zero_grad()
     out = model(data.x, data.edge_index)
-    loss = criterion(out[data.train_mask], data.y[data.train_mask])
+    loss = criterion(out[mask], data.y[mask])
     loss.backward()
     optimizer.step()
     return loss.item()
@@ -50,7 +50,7 @@ def run(data, model_name, features_set, split_type, graph_mode):
     prev_lr = optimizer.param_groups[0]['lr']
 
     for epoch in range(max_epochs):
-        loss = train(model, data, optimizer, criterion)
+        loss = train(model, data, optimizer, criterion, data.train_mask)
         pred = test(model, data)
 
         val_true = data.y[data.val_mask].detach().cpu().numpy()
