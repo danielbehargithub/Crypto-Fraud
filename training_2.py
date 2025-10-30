@@ -61,6 +61,11 @@ def find_best_threshold_on_val(model, data, thresholds=None):
 # Training function
 def train(model, data, optimizer, criterion):
     model.train()
+
+    # ניתוק/איפוס מצב טמפורלי בין אפוקים
+    if hasattr(model, "reset_history"):
+        model.reset_history()
+
     optimizer.zero_grad()
     out = _forward(model, data)
     loss = criterion(out[data.train_mask], data.y[data.train_mask])
@@ -117,10 +122,13 @@ def run(data, model_name, features_set, split_type, graph_mode):
         loss = train(model, data, optimizer, criterion)
         #pred = test(model, data)
 
-        best_t, _ = find_best_threshold_on_val(model, data)  # t* על הולידציה
+        with torch.no_grad():
+            best_t, _ = find_best_threshold_on_val(model, data)
+            proba_all = _proba_pos(model, data)
+
         val_mask = data.val_mask.detach().cpu().numpy().astype(bool)
         val_true = data.y.detach().cpu().numpy()[val_mask]
-        val_proba = _proba_pos(model, data)[val_mask]  # softmax[:, 1]
+        val_proba = proba_all[val_mask]
         val_f1 = f1_score(val_true, (val_proba >= best_t).astype(int), pos_label=1)
 
         test_mask = data.test_mask.detach().cpu().numpy().astype(bool)

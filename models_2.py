@@ -71,6 +71,10 @@ class EvolveGCN(nn.Module):
         logits_t = self.classifier(h_t)
         return logits_t
 
+    def reset_history(self):
+        # אם יש לך מבנים כמו dict/deque – אפסי כאן. אם אין – השאירי pass.
+        self.history = {}  # או self.history.clear()
+
     def forward(self, x, edge_index, time_step=None):
         device = x.device
         if time_step is None:
