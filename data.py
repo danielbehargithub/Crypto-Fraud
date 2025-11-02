@@ -74,17 +74,17 @@ def map_labels(nodes_df: pd.DataFrame) -> torch.Tensor:
 def make_masks_temporal(nodes_df: pd.DataFrame, y_tensor: torch.Tensor):
     """Build train/val/test masks by timesteps (temporal split)."""
     train_steps = set(range(1, 35))   # 1..34
-    val_steps   = set(range(35, 42))  # 35..41
-    test_steps  = set(range(42, 50))  # 42..49
+    val_steps = set(range(35, 42))  # 35..41
+    test_steps = set(range(42, 50))  # 42..49
 
     labeled_mask = (y_tensor >= 0)
     train_time_t = torch.tensor(nodes_df['time_step'].isin(train_steps).values, dtype=torch.bool)
-    val_time_t   = torch.tensor(nodes_df['time_step'].isin(val_steps).values,   dtype=torch.bool)
-    test_time_t  = torch.tensor(nodes_df['time_step'].isin(test_steps).values,  dtype=torch.bool)
+    val_time_t = torch.tensor(nodes_df['time_step'].isin(val_steps).values,   dtype=torch.bool)
+    test_time_t = torch.tensor(nodes_df['time_step'].isin(test_steps).values,  dtype=torch.bool)
 
     train_mask = train_time_t & labeled_mask
-    val_mask   = val_time_t   & labeled_mask
-    test_mask  = test_time_t  & labeled_mask
+    val_mask = val_time_t & labeled_mask
+    test_mask = test_time_t & labeled_mask
     return train_mask, val_mask, test_mask
 
 
@@ -145,7 +145,7 @@ def get_variants(
     y = map_labels(nodes_df)
 
     # Features (shared across modes)
-    x_all   = torch.tensor(nodes_df[FEATURE_COLS_ALL].values,   dtype=torch.float)
+    x_all = torch.tensor(nodes_df[FEATURE_COLS_ALL].values,   dtype=torch.float)
     x_local = torch.tensor(nodes_df[FEATURE_COLS_LOCAL].values, dtype=torch.float)
 
     # Masks (shared across modes)
@@ -172,5 +172,7 @@ def get_variants(
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     for k in list(out.keys()):
         out[k] = out[k].to(device)
+        # attach time_step so temporal models can consume it:
+        out[k].time_step = torch.tensor(nodes_df['time_step'].values, dtype=torch.long, device=device)
 
     return out

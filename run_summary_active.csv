@@ -1,3 +1,2 @@
 model,features_set,split_type,graph_mode,in_channels,best_val_f1,test_f1_at_best,final_labeled
-AL-GCN,local,temporal,dag,94,0.5038,0.2565,220
-AL-GCN,local,temporal,undirected,94,0.558,0.3698,220
+AL-GCN,local,temporal,dag,94,0.5737,0.2616,220

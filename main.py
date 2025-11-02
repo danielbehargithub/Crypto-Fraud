@@ -46,10 +46,9 @@ def run_experiments(
     return pd.DataFrame(rows)
 
 
-
 def main():
     # Choose subsets here:
-    graph_modes  = ["dag", "undirected"]   # or ["dag"] or ["undirected"]
+    graph_modes  = ["dag"]   # or ["dag"] or ["undirected"]
     model_names  = ["GCN"]                  # e.g., ["GCN"] to run only GCN. MLP available
     feature_sets = ["local"]                # e.g., ["local"] to run only LOCAL. all available
     split_types  = ["temporal"]             # e.g., ["temporal"] to run only TEMPORAL. random available
