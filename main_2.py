@@ -48,9 +48,9 @@ def run_experiments(
 
 def main():
     # Choose subsets here:
-    graph_modes  = ["dag", "undirected"]   # or ["dag"] or ["undirected"]
-    model_names  = ["GCN", "EvolveGCN", "DySAT"]                  # e.g., ["GCN"] to run only GCN. MLP available
-    feature_sets = ["all", "local"]                # e.g., ["local"] to run only LOCAL. all available
+    graph_modes  = ["dag"]   # or ["dag"] or ["undirected"]
+    model_names  = ["GCN"]                  # e.g., ["GCN"] to run only GCN. MLP available
+    feature_sets = ["local"]                # e.g., ["local"] to run only LOCAL. all available
     split_types  = ["temporal"]             # e.g., ["temporal"] to run only TEMPORAL. random available
 
     # Build only the variants you need (saves memory/time)
@@ -61,18 +61,18 @@ def main():
     )
 
     # ---- Passive runs ----
-    df_passive = run_experiments(
-        "passive",
-        data_variants=data_variants,
-        graph_modes=graph_modes,
-        model_names=model_names,
-        feature_sets=feature_sets,
-        split_types=split_types,
-    )
-    if not df_passive.empty:
-        print("\n=== Summary Table (Passive runs) ===")
-        print(df_passive.to_string(index=False))
-        df_passive.to_csv("run_summary_passive.csv", index=False)
+    # df_passive = run_experiments(
+    #     "passive",
+    #     data_variants=data_variants,
+    #     graph_modes=graph_modes,
+    #     model_names=model_names,
+    #     feature_sets=feature_sets,
+    #     split_types=split_types,
+    # )
+    # if not df_passive.empty:
+    #     print("\n=== Summary Table (Passive runs) ===")
+    #     print(df_passive.to_string(index=False))
+    #     df_passive.to_csv("run_summary_passive.csv", index=False)
 
     # ---- Active Learning runs ----
     df_active = run_experiments(

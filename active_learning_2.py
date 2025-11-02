@@ -6,7 +6,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.metrics import f1_score
 from torch_geometric.data import Data
 from models_2 import GCN, MLP, build_model
-from training_2 import _forward
+from training_2 import _forward, epoch_loop, _class_weights_from_train
 
 
 @torch.no_grad()
@@ -86,15 +86,18 @@ def run_active_learning(
     while total_acquired < budget and remaining_pool.numel() > 0:
         round_id += 1
         dyn_train_mask = make_dynamic_train_mask(n_nodes, torch.sort(labeled_idx).values, device)
+        data.train_mask = dyn_train_mask
 
-        m = model_name.upper()
-        model = build_model(model_name, in_dim=data.num_node_features, out_dim=2).to(device)
+        model, cfg = build_model(model_name, in_dim=data.num_node_features, out_dim=2)
+        model = model.to(device)
 
         # LR/WD לפי מודל (כמו ב-training.py)
-        lr = 2e-2 if m == "GCN" else (1e-3 if m == "EVOLVEGCN" else 5e-4)  # DySAT=5e-4
-        wd = 5e-4 if m != "DYSAT" else 1e-4
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+        lr = cfg.get("lr", 2e-2)
+        wd = cfg.get("weight_decay", 5e-4)
+        warmup_start = cfg.get("warmup_start", 0)  # e.g., MLP: 50, GCN: 0
+        scheduler_warmup = cfg.get("scheduler_warmup", True)
 
+        # why not on all train data
         # Class weights לפי הדינמיקה של הלייבלים בכל round
         def _class_weights_from_mask(y, mask, dev):
             y_tr = y[mask]
@@ -103,46 +106,19 @@ def run_active_learning(
             w = counts.sum() / (2.0 * counts)
             return w.to(dev)
 
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
         criterion = nn.CrossEntropyLoss(weight=_class_weights_from_mask(y_all, dyn_train_mask, device))
-
         scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=10, min_lr=0.002)
 
-        patience = 30
-        no_improve = 0
-        EPS = 0.0002
-        best_val_f1 = -1.0
-        best_test_f1 = 0.0
+        res = epoch_loop(
+            model, data, optimizer, criterion, scheduler,
+            lr=lr, wd=wd, warmup_start=warmup_start, scheduler_warmup=scheduler_warmup, max_epochs=max_epochs_per_round
+        )
+        best_val_f1 = res["best_val_f1"]
+        best_test_f1 = res["best_test_f1"]
+        stop_epoch = res["stop_epoch"]
+        final_lr = res["final_lr"]
 
-        for epoch in range(max_epochs_per_round):
-            # Train
-            model.train()
-            optimizer.zero_grad()
-            logits = _forward(model, data)
-            loss = criterion(logits[dyn_train_mask], y_all[dyn_train_mask])
-            loss.backward()
-            optimizer.step()
-
-            # Eval
-            model.eval()
-            with torch.no_grad():
-                logits = _forward(model, data)
-                pred = logits.argmax(dim=1)
-                val_true = y_all[data.val_mask].detach().cpu().numpy()
-                val_pred = pred[data.val_mask].detach().cpu().numpy()
-                val_f1 = f1_score(val_true, val_pred, average='binary', pos_label=1)
-                test_true = y_all[data.test_mask].detach().cpu().numpy()
-                test_pred = pred[data.test_mask].detach().cpu().numpy()
-                test_f1 = f1_score(test_true, test_pred, average='binary', pos_label=1)
-
-            improved = (val_f1 - best_val_f1) >= EPS
-            if improved:
-                best_val_f1 = val_f1
-                best_test_f1 = test_f1
-                no_improve = 0
-            else:
-                no_improve += 1
-
-            scheduler.step(val_f1)
 
         if best_val_f1 > best_val_f1_overall:
             best_val_f1_overall = best_val_f1

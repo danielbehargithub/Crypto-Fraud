@@ -248,15 +248,34 @@ class DySAT(nn.Module):
         return logits_full
 
 
-def build_model(kind: str, in_dim: int, out_dim: int = 2):
-    k = kind.upper()
-    if k == "GCN":
-        return GCN(in_channels=in_dim, hidden_channels=64, out_channels=out_dim)
-    if k == "MLP":
-        return MLP(in_channels=in_dim, hidden1=128, hidden2=64, out_channels=out_dim)
-    if k == "EVOLVEGCN":
-        return EvolveGCN(in_channels=in_dim, hidden_channels=128, out_channels=out_dim)
-    if k == "DYSAT":
-        return DySAT(in_channels=in_dim, struct_hidden=128, struct_out=128, out_channels=out_dim)
-    raise ValueError(f"Unknown model kind: {kind}")
+# def build_model(kind: str, in_dim: int, out_dim: int = 2):
+#     k = kind.upper()
+#     if k == "GCN":
+#         return GCN(in_channels=in_dim, hidden_channels=64, out_channels=out_dim)
+#     if k == "MLP":
+#         return MLP(in_channels=in_dim, hidden1=128, hidden2=64, out_channels=out_dim)
+#     if k == "EVOLVEGCN":
+#         return EvolveGCN(in_channels=in_dim, hidden_channels=128, out_channels=out_dim)
+#     if k == "DYSAT":
+#         return DySAT(in_channels=in_dim, struct_hidden=128, struct_out=128, out_channels=out_dim)
+#     raise ValueError(f"Unknown model kind: {kind}")
 
+def build_model(kind: str, in_dim: int, out_dim: int = 2):
+    kind = kind.upper()
+    if kind == "GCN":
+        model = GCN(in_channels=in_dim, hidden_channels=64, out_channels=out_dim)
+        train_cfg = {"lr": 2e-2, "weight_decay": 5e-4,
+                     "warmup_start": 0, "scheduler_warmup": True}   # GCN: no warmup for ES, scheduler active
+    elif kind == "MLP":
+        model = MLP(in_channels=in_dim, hidden1=128, hidden2=64, out_channels=out_dim)
+        train_cfg = {"lr": 2e-2, "weight_decay": 5e-4,
+                     "warmup_start": 50, "scheduler_warmup": False} # MLP: delay ES/scheduler
+    elif kind == "EVOLVEGCN":
+        model = EvolveGCN(in_dim, out_dim)
+        train_cfg = {"lr": 1e-3, "weight_decay": 5e-4,
+                     "warmup_start": 10, "scheduler_warmup": True}
+    else:
+        model = DySAT(in_dim, struct_hidden=128, struct_out=128, out_channels=out_dim)
+        train_cfg = {"lr": 5e-4, "weight_decay": 1e-4,
+                     "warmup_start": 10, "scheduler_warmup": True}
+    return model, train_cfg
