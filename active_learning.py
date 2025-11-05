@@ -115,7 +115,7 @@ def run_active_learning(
 
         optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
         criterion = nn.CrossEntropyLoss(weight=_class_weights_from_mask(y_all, dyn_train_mask, device))
-        scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=10, min_lr=0.002)
+        scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3, min_lr=0.002)
 
         res = epoch_loop(
             model, data, optimizer, criterion, scheduler,

@@ -1,3 +1,5 @@
+import copy
+
 import pandas as pd
 from data import get_variants
 from active_learning import run_active_learning
@@ -11,23 +13,12 @@ def run_experiments(
     model_names,
     feature_sets,
     split_types,
-    al_acquisitions = ("entropy",),
+    al_acquisitions = None,
 ):
     """
     Generic experiment loop. Uses configs provided by main().
     run_type: "passive" or "active".
     """
-
-    if run_type == "active":
-        if isinstance(al_acquisitions, str):
-            acquisitions_iter = (al_acquisitions,)
-        else:
-            acquisitions_iter = tuple(al_acquisitions)
-        if len(acquisitions_iter) == 0:
-            raise ValueError("al_acquisitions must contain at least one strategy for active runs.")
-    else:
-        acquisitions_iter = ()
-
     rows = []
     for gm in graph_modes:
         for model_name in model_names:
@@ -37,10 +28,12 @@ def run_experiments(
 
                     if run_type == "passive":
                         row = run(data_obj, model_name, fset, split, gm)
+                        rows.append(row)
                     elif run_type == "active":
                         for acquisition in al_acquisitions:
+                            data_copy = copy.deepcopy(data_obj)
                             row = run_active_learning(
-                                data=data_obj,
+                                data=data_copy,
                                 model_name=model_name,
                                 features_set=fset,
                                 split_type=split,
@@ -52,11 +45,7 @@ def run_experiments(
                                 rng_seed=42,
                                 acquisition=acquisition,
                             )
-                    else:
-                        raise ValueError(f"Unknown run_type: {run_type}")
-
-                    rows.append(row)
-
+                            rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -67,7 +56,7 @@ def main():
     feature_sets = ["local"]                # e.g., ["local"] to run only LOCAL. all available
     split_types  = ["temporal"]             # e.g., ["temporal"] to run only TEMPORAL. random available
 
-    al_acquisition = "random"  # choose between "entropy" and "random"
+    al_acquisitions = ["entropy", "random"]  # choose between "entropy", "random", or both: ["entropy", "random"]
 
     # Build only the variants you need (saves memory/time)
     data_variants = get_variants(
@@ -77,18 +66,18 @@ def main():
     )
 
     # ---- Passive runs ----
-    # df_passive = run_experiments(
-    #     "passive",
-    #     data_variants=data_variants,
-    #     graph_modes=graph_modes,
-    #     model_names=model_names,
-    #     feature_sets=feature_sets,
-    #     split_types=split_types,
-    # )
-    # if not df_passive.empty:
-    #     print("\n=== Summary Table (Passive runs) ===")
-    #     print(df_passive.to_string(index=False))
-    #     df_passive.to_csv("run_summary_passive.csv", index=False)
+    df_passive = run_experiments(
+        "passive",
+        data_variants=data_variants,
+        graph_modes=graph_modes,
+        model_names=model_names,
+        feature_sets=feature_sets,
+        split_types=split_types,
+    )
+    if not df_passive.empty:
+        print("\n=== Summary Table (Passive runs) ===")
+        print(df_passive.to_string(index=False))
+        df_passive.to_csv("run_summary_passive.csv", index=False)
 
     # ---- Active Learning runs ----
     df_active = run_experiments(
@@ -98,7 +87,7 @@ def main():
         model_names=model_names,
         feature_sets=feature_sets,
         split_types=split_types,
-        al_acquisition=al_acquisition,
+        al_acquisitions=al_acquisitions,
     )
     if not df_active.empty:
         print("\n=== Summary Table (Active Learning runs) ===")

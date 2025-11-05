@@ -88,7 +88,7 @@ def test(model, data):
     return pred
 
 def epoch_loop(model, data, optimizer, criterion, scheduler, *,
-               EPS: float = 2e-4, lr, wd, warmup_start: int = 0, patience: int = 30, max_epochs: int = 1000,
+               EPS: float = 2e-3, lr, wd, warmup_start: int = 0, patience: int = 10, max_epochs: int = 100,
                scheduler_warmup: bool = True,
     ):
     best_val_f1 = -1.0
@@ -164,7 +164,7 @@ def run(data, model_name, features_set, split_type, graph_mode):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
     weights = _class_weights_from_train(data)
     criterion = nn.CrossEntropyLoss(weight=weights)
-    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=10, min_lr=0.002)
+    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3, min_lr=0.002)
 
     res = epoch_loop(
         model, data, optimizer, criterion, scheduler,

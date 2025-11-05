@@ -268,8 +268,8 @@ def build_model(kind: str, in_dim: int, out_dim: int = 2):
                      "warmup_start": 0, "scheduler_warmup": True}   # GCN: no warmup for ES, scheduler active
     elif kind == "MLP":
         model = MLP(in_channels=in_dim, hidden1=128, hidden2=64, out_channels=out_dim)
-        train_cfg = {"lr": 2e-2, "weight_decay": 5e-4,
-                     "warmup_start": 50, "scheduler_warmup": False} # MLP: delay ES/scheduler
+        train_cfg = {"lr": 2e-1, "weight_decay": 5e-4,
+                     "warmup_start": 5, "scheduler_warmup": False} # MLP: delay ES/scheduler
     elif kind == "EVOLVEGCN":
         model = EvolveGCN(in_dim, out_dim)
         train_cfg = {"lr": 1e-3, "weight_decay": 5e-4,
