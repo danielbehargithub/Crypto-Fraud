@@ -11,7 +11,7 @@ def run_experiments(
     model_names,
     feature_sets,
     split_types,
-    al_acquisitions = ("entropy",),
+    al_acquisitions=("entropy",),
 ):
     """
     Generic experiment loop. Uses configs provided by main().
@@ -38,7 +38,7 @@ def run_experiments(
                     if run_type == "passive":
                         row = run(data_obj, model_name, fset, split, gm)
                     elif run_type == "active":
-                        for acquisition in al_acquisitions:
+                        for acquisition in acquisitions_iter:
                             row = run_active_learning(
                                 data=data_obj,
                                 model_name=model_name,
@@ -52,10 +52,12 @@ def run_experiments(
                                 rng_seed=42,
                                 acquisition=acquisition,
                             )
+                            rows.append(row)
                     else:
                         raise ValueError(f"Unknown run_type: {run_type}")
 
-                    rows.append(row)
+                    if run_type == "passive":
+                        rows.append(row)
 
     return pd.DataFrame(rows)
 
@@ -67,7 +69,8 @@ def main():
     feature_sets = ["local"]                # e.g., ["local"] to run only LOCAL. all available
     split_types  = ["temporal"]             # e.g., ["temporal"] to run only TEMPORAL. random available
 
-    al_acquisition = "random"  # choose between "entropy" and "random"
+    # Choose one or more active learning acquisition strategies to evaluate
+    al_acquisitions = ["entropy"]  # e.g., ["entropy", "random"]
 
     # Build only the variants you need (saves memory/time)
     data_variants = get_variants(
@@ -98,7 +101,7 @@ def main():
         model_names=model_names,
         feature_sets=feature_sets,
         split_types=split_types,
-        al_acquisition=al_acquisition,
+        al_acquisitions=al_acquisitions,
     )
     if not df_active.empty:
         print("\n=== Summary Table (Active Learning runs) ===")
