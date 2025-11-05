@@ -45,10 +45,13 @@ def run_active_learning(
     budget: int = 200,
     max_epochs_per_round: int = 100,
     rng_seed: int = 42,
+    acquisition: str = "entropy",
 ) -> Dict:
-    """Pool-based Active Learning on the training split using entropy sampling."""
+    """Pool-based Active Learning on the training split.
+    """
     tag = f"{model_name.upper()} | {features_set.upper()} | {split_type.upper()} | {graph_mode.upper()}"
-    print(f"\n===== RUN (Active Learning): {tag} =====")
+    # print(f"\n===== RUN (Active Learning): {tag} =====")
+    print(f"\n===== RUN (Active Learning): {tag} | Acquisition={acquisition.upper()} =====")
 
     device = data.x.device
     y_all = data.y
@@ -83,6 +86,10 @@ def run_active_learning(
     best_test_f1_at_best = 0.0
 
     # AL loop
+    acquisition = acquisition.lower()
+    if acquisition not in {"entropy", "random"}:
+        raise ValueError(f"Unsupported acquisition strategy: {acquisition}")
+
     while total_acquired < budget and remaining_pool.numel() > 0:
         round_id += 1
         dyn_train_mask = make_dynamic_train_mask(n_nodes, torch.sort(labeled_idx).values, device)
@@ -126,16 +133,20 @@ def run_active_learning(
 
         print(f"[AL-Round {round_id}] Labeled={labeled_idx.numel()} | Best Val F1={best_val_f1:.4f} | Test F1@best={best_test_f1:.4f}")
 
-        # Acquisition: top-entropy from remaining pool
-        model.eval()
-        with torch.no_grad():
-            logits = _forward(model, data)
-            entropy = compute_entropy(logits)
 
         k = min(batch_size, budget - total_acquired, remaining_pool.numel())
         if k <= 0:
             break
-        picked = pick_by_entropy(entropy, remaining_pool, k)
+        if acquisition == "entropy":
+            model.eval()
+            with torch.no_grad():
+                logits = _forward(model, data)
+                entropy = compute_entropy(logits)
+            picked = pick_by_entropy(entropy, remaining_pool, k)
+        else:  # random
+            perm = torch.randperm(remaining_pool.numel(), generator=rng)
+            picked_cpu = remaining_pool.detach().cpu()[perm[:k]]
+            picked = picked_cpu.to(remaining_pool.device)
 
         labeled_idx = torch.unique(torch.cat([labeled_idx, picked]))
         total_acquired += picked.numel()
@@ -151,4 +162,5 @@ def run_active_learning(
         "best_val_f1": round(float(best_val_f1_overall), 4),
         "test_f1_at_best": round(float(best_test_f1_at_best), 4),
         "final_labeled": int(labeled_idx.numel()),
+        "acquisition": acquisition,
     }
