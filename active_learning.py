@@ -160,30 +160,6 @@ def run_active_learning(
         total_acquired += picked.numel()
         remaining_pool = remaining_pool[~torch.isin(remaining_pool, picked)]
 
-    # Final evaluation with threshold tuning on BEST model (same as regular training)
-    # test_f1_tuned = 0.0
-    # if best_model_state is not None and best_round_model_cfg is not None:
-    #     # Rebuild and restore best model
-    #     final_model, _ = build_model(model_name, in_dim=data.num_node_features, out_dim=2)
-    #     final_model = final_model.to(device)
-    #     final_model.load_state_dict({k: v.to(device) for k, v in best_model_state.items()})
-    #     final_model.eval()
-    #
-    #     print(f"✓ Restored best AL model (Val F1={best_val_f1_overall:.4f})")
-
-        # # Find optimal threshold on validation with best model
-        # best_t, _ = find_best_threshold_on_val(final_model, data)
-        #
-        # # Apply to test
-        # test_mask_np = data.test_mask.detach().cpu().numpy().astype(bool)
-        # test_true = data.y.detach().cpu().numpy()[test_mask_np]
-        # test_pred_thr = predict_with_threshold(final_model, data, best_t)[test_mask_np]
-        # test_f1_tuned = f1_score(test_true, test_pred_thr, pos_label=1)
-
-        # print(f"[AL Final] Optimal threshold on VAL: t*={best_t:.2f}, Test F1 (tuned)={test_f1_tuned:.4f}")
-
-    # print(
-        # f"\n[{tag}] AL finished. Best Val F1={best_val_f1_overall:.4f}, Test F1 at best Val={best_test_f1_at_best:.4f}, Test F1 (tuned)={test_f1_tuned:.4f}")
     test_true = data.y[data.test_mask].detach().cpu().numpy()
     test_pred = predict_with_threshold(model, data, best_t)[data.test_mask.detach().cpu().numpy()]
 
