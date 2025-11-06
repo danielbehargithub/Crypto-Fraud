@@ -3,10 +3,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, classification_report
 from torch_geometric.data import Data
 from models import GCN, MLP, build_model
-from training import _forward, epoch_loop, _class_weights_from_train
+from training import _forward, epoch_loop, _class_weights_from_train, find_best_threshold_on_val, predict_with_threshold
 
 
 @torch.no_grad()
@@ -35,23 +35,22 @@ def pick_by_entropy(entropy: torch.Tensor, candidate_idx: torch.Tensor, k: int) 
 
 
 def run_active_learning(
-    data: Data,
-    model_name: str,
-    features_set: str,
-    split_type: str,
-    graph_mode: str,
-    seed_per_class: int = 10,
-    batch_size: int = 50,
-    budget: int = 200,
-    max_epochs_per_round: int = 100,
-    rng_seed: int = 42,
-    acquisition: str = "entropy",
+        data: Data,
+        model_name: str,
+        features_set: str,
+        split_type: str,
+        graph_mode: str,
+        seed_per_class: int = 10,
+        batch_size: int = 50,
+        budget: int = 200,
+        max_epochs_per_round: int = 100,
+        rng_seed: int = 42,
+        acquisition: str = "entropy",
 ) -> Dict:
     """Pool-based Active Learning on the training split.
     """
-    tag = f"{model_name.upper()} | {features_set.upper()} | {split_type.upper()} | {graph_mode.upper()}"
-    # print(f"\n===== RUN (Active Learning): {tag} =====")
-    print(f"\n===== RUN (Active Learning): {tag} | Acquisition={acquisition.upper()} =====")
+    tag = f"{model_name.upper()} | {features_set.upper()} | {split_type.upper()} | {graph_mode.upper()} | {acquisition.upper()}"
+    print(f"\n===== RUN (Active Learning): {tag}\n")
 
     device = data.x.device
     y_all = data.y
@@ -84,6 +83,8 @@ def run_active_learning(
 
     best_val_f1_overall = -1.0
     best_test_f1_at_best = 0.0
+    best_model_state = None  # Save best model across all AL rounds
+    best_round_model_cfg = None
 
     # AL loop
     acquisition = acquisition.lower()
@@ -92,6 +93,7 @@ def run_active_learning(
 
     while total_acquired < budget and remaining_pool.numel() > 0:
         round_id += 1
+        print(f"[AL-Round {round_id}]")
         dyn_train_mask = make_dynamic_train_mask(n_nodes, torch.sort(labeled_idx).values, device)
         data.train_mask = dyn_train_mask
 
@@ -101,10 +103,9 @@ def run_active_learning(
         # LR/WD לפי מודל (כמו ב-training.py)
         lr = cfg.get("lr", 2e-2)
         wd = cfg.get("weight_decay", 5e-4)
-        warmup_start = cfg.get("warmup_start", 0)  # e.g., MLP: 50, GCN: 0
+        warmup_start = cfg.get("warmup_start", 0)
         scheduler_warmup = cfg.get("scheduler_warmup", True)
 
-        # why not on all train data
         # Class weights לפי הדינמיקה של הלייבלים בכל round
         def _class_weights_from_mask(y, mask, dev):
             y_tr = y[mask]
@@ -123,16 +124,23 @@ def run_active_learning(
         )
         best_val_f1 = res["best_val_f1"]
         best_test_f1 = res["best_test_f1"]
+        best_t = res["best_threshold"]
+        auprc = res["auprc"]
+        best_epoch = res["best_epoch"]
         stop_epoch = res["stop_epoch"]
         final_lr = res["final_lr"]
 
+        # Track best model across all AL rounds (standard practice)
+        # if best_val_f1 > best_val_f1_overall:
+        #     best_val_f1_overall = best_val_f1
+        #     best_test_f1_at_best = best_test_f1
+        #     # Save best model state
+        #     best_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+        #     best_round_model_cfg = cfg
 
-        if best_val_f1 > best_val_f1_overall:
-            best_val_f1_overall = best_val_f1
-            best_test_f1_at_best = best_test_f1
-
-        print(f"[AL-Round {round_id}] Labeled={labeled_idx.numel()} | Best Val F1={best_val_f1:.4f} | Test F1@best={best_test_f1:.4f}")
-
+        print(
+            f"[AL-Round {round_id}] Labeled={labeled_idx.numel()} | Best Val F1={best_val_f1:.4f} | Test F1 best={best_test_f1:.4f} "
+            f"| best threshold={best_t}\n")
 
         k = min(batch_size, budget - total_acquired, remaining_pool.numel())
         if k <= 0:
@@ -152,15 +160,49 @@ def run_active_learning(
         total_acquired += picked.numel()
         remaining_pool = remaining_pool[~torch.isin(remaining_pool, picked)]
 
-    print(f"\n[{tag}] AL finished. Best Val F1={best_val_f1_overall:.4f}, Test F1 at best Val={best_test_f1_at_best:.4f}")
+    # Final evaluation with threshold tuning on BEST model (same as regular training)
+    # test_f1_tuned = 0.0
+    # if best_model_state is not None and best_round_model_cfg is not None:
+    #     # Rebuild and restore best model
+    #     final_model, _ = build_model(model_name, in_dim=data.num_node_features, out_dim=2)
+    #     final_model = final_model.to(device)
+    #     final_model.load_state_dict({k: v.to(device) for k, v in best_model_state.items()})
+    #     final_model.eval()
+    #
+    #     print(f"✓ Restored best AL model (Val F1={best_val_f1_overall:.4f})")
+
+        # # Find optimal threshold on validation with best model
+        # best_t, _ = find_best_threshold_on_val(final_model, data)
+        #
+        # # Apply to test
+        # test_mask_np = data.test_mask.detach().cpu().numpy().astype(bool)
+        # test_true = data.y.detach().cpu().numpy()[test_mask_np]
+        # test_pred_thr = predict_with_threshold(final_model, data, best_t)[test_mask_np]
+        # test_f1_tuned = f1_score(test_true, test_pred_thr, pos_label=1)
+
+        # print(f"[AL Final] Optimal threshold on VAL: t*={best_t:.2f}, Test F1 (tuned)={test_f1_tuned:.4f}")
+
+    # print(
+        # f"\n[{tag}] AL finished. Best Val F1={best_val_f1_overall:.4f}, Test F1 at best Val={best_test_f1_at_best:.4f}, Test F1 (tuned)={test_f1_tuned:.4f}")
+    test_true = data.y[data.test_mask].detach().cpu().numpy()
+    test_pred = predict_with_threshold(model, data, best_t)[data.test_mask.detach().cpu().numpy()]
+
+    print(f"\n[{tag}] Classification Report on Test Set (threshold={best_t:.2f}):")
+    print(classification_report(test_true, test_pred, target_names=['Licit', 'Illicit']))
+
     return {
         "model": f"AL-{model_name.upper()}",
+        "acquisition": acquisition,
         "features_set": features_set,
         "split_type": split_type,
         "graph_mode": graph_mode,
         "in_channels": int(data.num_node_features),
-        "best_val_f1": round(float(best_val_f1_overall), 4),
-        "test_f1_at_best": round(float(best_test_f1_at_best), 4),
+        "best_val_f1": best_val_f1,
+        "test_f1": best_test_f1,
+        "auprc": auprc,
+        "best_threshold": best_t,
+        "best_epoch": best_epoch,
+        "stop_epoch": stop_epoch,
+        "final_lr": final_lr,
         "final_labeled": int(labeled_idx.numel()),
-        "acquisition": acquisition,
     }

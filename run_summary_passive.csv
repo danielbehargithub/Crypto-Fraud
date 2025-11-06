@@ -1,2 +1,2 @@
-model,features_set,split_type,graph_mode,in_channels,best_val_f1,test_f1_at_best,test_f1_tuned,stop_epoch,final_lr
-MLP,local,temporal,dag,94,0.6717,0.3213,0.1634,22,0.05
+model,features_set,split_type,graph_mode,in_channels,best_val_f1,test_f1,auprc,best_threshold,best_epoch,stop_epoch,final_lr
+GCN,local,temporal,dag,94,0.5184,0.2376,0.19,0.8,36,46,0.0025

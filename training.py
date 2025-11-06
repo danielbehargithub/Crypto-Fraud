@@ -1,4 +1,5 @@
 
+
 import torch
 from sklearn.metrics import classification_report, precision_score, recall_score, average_precision_score, f1_score
 import torch.nn as nn
@@ -93,8 +94,14 @@ def epoch_loop(model, data, optimizer, criterion, scheduler, *,
     ):
     best_val_f1 = -1.0
     best_test_f1 = 0.0
+    best_model_state = None  # Save best model weights
+    best_epoch = 0
     prev_lr = optimizer.param_groups[0]['lr']
     no_improve = 0
+    best_threshold = 0.5
+
+    test_mask = data.test_mask.detach().cpu().numpy().astype(bool)
+    test_true = data.y.detach().cpu().numpy()[test_mask]
 
     for epoch in range(max_epochs):
         loss = train(model, data, optimizer, criterion)
@@ -103,21 +110,25 @@ def epoch_loop(model, data, optimizer, criterion, scheduler, *,
             best_t, val_f1  = find_best_threshold_on_val(model, data)
             proba_all = _proba_pos(model, data)
 
-        test_mask = data.test_mask.detach().cpu().numpy().astype(bool)
-        test_true = data.y.detach().cpu().numpy()[test_mask]
         test_proba = proba_all[test_mask]
         test_f1 = f1_score(test_true, (test_proba >= best_t).astype(int), pos_label=1)
+        test_auprc = average_precision_score(test_true, test_proba)
 
         improved = (val_f1 - best_val_f1) >= EPS
         if improved:
             best_val_f1 = val_f1
             best_test_f1 = test_f1
+            best_epoch = epoch
+            best_threshold = best_t
+            auprc = test_auprc
+            # Save model state (standard practice)
+            best_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             no_improve = 0
         else:
             if epoch >= warmup_start:
                 no_improve += 1
             if no_improve >= patience:
-                print(f"Early stopping at epoch {epoch}. Best Val F1={best_val_f1:.4f}, Test F1 at best Val={best_test_f1:.4f}")
+                print(f"Early stopping at epoch {epoch}. Best epoch: {best_epoch})")
                 break
 
         if scheduler_warmup or epoch >= warmup_start:
@@ -131,13 +142,20 @@ def epoch_loop(model, data, optimizer, criterion, scheduler, *,
         if epoch % 20 == 0 or epoch == 0:
             print(f"Epoch: {epoch:03d}, Loss: {loss:.4f}, Val F1: {val_f1:.4f}, Test F1: {test_f1:.4f}")
 
+    # Restore best model (STANDARD PRACTICE)
+    if best_model_state is not None:
+        device = next(model.parameters()).device
+        model.load_state_dict({k: v.to(device) for k, v in best_model_state.items()})
+
     return {
         "best_val_f1": round(float(best_val_f1), 4),
         "best_test_f1": round(float(best_test_f1), 4),
+        "best_threshold": round(float(best_threshold), 2),
+        "auprc": round(float(auprc), 4),
+        "best_epoch": int(best_epoch),
         "stop_epoch": int(epoch),
         "final_lr": float(optimizer.param_groups[0]['lr']),
     }
-
 
 
 def run(data, model_name, features_set, split_type, graph_mode):
@@ -171,43 +189,32 @@ def run(data, model_name, features_set, split_type, graph_mode):
         lr=lr, wd=wd, warmup_start=warmup_start, scheduler_warmup=scheduler_warmup
     )
     best_val_f1 = res["best_val_f1"]
-    best_test_f1 = res["best_test_f1"]
+    test_f1 = res["best_test_f1"]
+    best_t = res["best_threshold"]
+    auprc = res["auprc"]
+    best_epoch = res["best_epoch"]
     stop_epoch = res["stop_epoch"]
     final_lr = res["final_lr"]
 
-
-    # 1) תחזית “רגילה” (argmax) — נשמור להשוואה
     test_true = data.y[data.test_mask].detach().cpu().numpy()
+    test_pred = predict_with_threshold(model, data, best_t)[data.test_mask.detach().cpu().numpy()]
 
-    # 2) מציאת סף מיטבי על ולידציה
-    best_t, best_val_f1_thr = find_best_threshold_on_val(model, data)
+    print(f"\n[{tag}] Classification Report on Test Set (threshold={best_t:.2f}):")
+    print(classification_report(test_true, test_pred, target_names=['Licit', 'Illicit']))
 
-    # אחרי שמצאת best_t:
-    test_p = _proba_pos(model, data)[data.test_mask.detach().cpu().numpy()]
-    auprc = average_precision_score(test_true, test_p)
-    print(f"[TEST] AUPRC (class=1): {auprc:.4f}")
-    print(
-        f"\n[Threshold Tuning] Best threshold on VAL (for Illicit F1): t*={best_t:.2f}, Val F1@t*={best_val_f1_thr:.4f}")
-
-    # 3) תחזית עם הסף המיטבי על סט הבדיקה
-    test_pred_thr = predict_with_threshold(model, data, best_t)[data.test_mask.detach().cpu().numpy()]
-
-    print(f"\n[{tag}] Classification Report on Test Set (threshold tuned on VAL @ t*={best_t:.2f}):")
-    print(classification_report(test_true, test_pred_thr, target_names=['Licit', 'Illicit']))
-
-    # אפשר גם להחזיר את שני ה-F1 במילון התוצאות
-    f1_test_thr = f1_score(test_true, test_pred_thr, pos_label=1)
 
     # Rich summary row
     return {
         "model": model_name.upper(),
-        "features_set": features_set,     # 'local' or 'all'
-        "split_type": split_type,         # 'temporal' or 'random'
+        "features_set": features_set,
+        "split_type": split_type,
         "graph_mode": graph_mode,
         "in_channels": int(data.num_node_features),
-        "best_val_f1": round(float(best_val_f1), 4),
-        "test_f1_at_best": round(float(best_test_f1), 4),
-        "test_f1_tuned": round(float(f1_test_thr), 4),
-        "stop_epoch": int(stop_epoch),
-        "final_lr": float(optimizer.param_groups[0]['lr']),
+        "best_val_f1": best_val_f1,
+        "test_f1": test_f1,
+        "auprc": auprc,
+        "best_threshold": best_t,
+        "best_epoch": best_epoch,
+        "stop_epoch": stop_epoch,
+        "final_lr": final_lr,
     }
