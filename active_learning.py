@@ -1,12 +1,12 @@
-from typing import Dict
+from typing import Dict, List
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from sklearn.metrics import f1_score, classification_report
+from sklearn.metrics import f1_score, classification_report, average_precision_score
 from torch_geometric.data import Data
-from models import GCN, MLP, build_model
-from training import _forward, epoch_loop, _class_weights_from_train, find_best_threshold_on_val, predict_with_threshold
+from models import build_model
+from training import _forward, epoch_loop, predict_with_threshold
 
 
 @torch.no_grad()
@@ -63,7 +63,7 @@ def run_active_learning(
 
     # Stratified seed: pick seed_per_class per class from pool (if possible)
     rng = torch.Generator(device='cpu').manual_seed(rng_seed)
-    labeled_idx_list = []
+    labeled_idx_list: List[torch.Tensor] = []
     for cls in torch.unique(y_all[pool_idx]):
         if cls.item() < 0:
             continue
@@ -81,17 +81,21 @@ def run_active_learning(
     total_acquired = 0
     round_id = 0
 
-    best_val_f1_overall = -1.0
-    best_test_f1_at_best = 0.0
-    best_model_state = None  # Save best model across all AL rounds
-    best_round_model_cfg = None
+    # best_val_f1_overall = -1.0
+    # best_test_f1_at_best = 0.0
+    # best_model_state = None  # Save best model across all AL rounds
+    # best_round_model_cfg = None
 
     # AL loop
     acquisition = acquisition.lower()
     if acquisition not in {"entropy", "random"}:
         raise ValueError(f"Unsupported acquisition strategy: {acquisition}")
 
-    while total_acquired < budget and remaining_pool.numel() > 0:
+
+    curve = []  # list of dicts: {"round": int, "n_labeled": int, "f1_pos_val": float, "auprc_val": float}
+    best_t = 0.5
+
+    while total_acquired <= budget and remaining_pool.numel() > 0:
         round_id += 1
         print(f"[AL-Round {round_id}]")
         dyn_train_mask = make_dynamic_train_mask(n_nodes, torch.sort(labeled_idx).values, device)
@@ -100,13 +104,12 @@ def run_active_learning(
         model, cfg = build_model(model_name, in_dim=data.num_node_features, out_dim=2)
         model = model.to(device)
 
-        # LR/WD לפי מודל (כמו ב-training.py)
         lr = cfg.get("lr", 2e-2)
         wd = cfg.get("weight_decay", 5e-4)
         warmup_start = cfg.get("warmup_start", 0)
         scheduler_warmup = cfg.get("scheduler_warmup", True)
 
-        # Class weights לפי הדינמיקה של הלייבלים בכל round
+        # Class weights for every round (want balance)
         def _class_weights_from_mask(y, mask, dev):
             y_tr = y[mask]
             counts = torch.bincount(y_tr, minlength=2).float()
@@ -130,6 +133,16 @@ def run_active_learning(
         stop_epoch = res["stop_epoch"]
         final_lr = res["final_lr"]
 
+        curve.append({
+            "round": round_id,
+            "n_labeled": labeled_idx.numel(),
+            "f1_pos_val": best_val_f1,
+            "auprc_val": auprc,
+            "best_epoch": best_epoch,
+            "stop_epoch": stop_epoch,
+            "final_lr": final_lr,
+            "best_threshold": best_t,
+        })
         # Track best model across all AL rounds (standard practice)
         # if best_val_f1 > best_val_f1_overall:
         #     best_val_f1_overall = best_val_f1
@@ -181,4 +194,5 @@ def run_active_learning(
         "stop_epoch": stop_epoch,
         "final_lr": final_lr,
         "final_labeled": int(labeled_idx.numel()),
+        "curve": curve,
     }

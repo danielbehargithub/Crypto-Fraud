@@ -4,7 +4,7 @@ import pandas as pd
 from data import get_variants
 from active_learning import run_active_learning
 from training import run
-
+from visual import plot_f1_minority_vs_labels
 def run_experiments(
     run_type: str,
     *,
@@ -40,7 +40,7 @@ def run_experiments(
                                 graph_mode=gm,
                                 seed_per_class=10,
                                 batch_size=50,
-                                budget=200,
+                                budget=100,
                                 max_epochs_per_round=100,
                                 rng_seed=42,
                                 acquisition=acquisition,
@@ -90,10 +90,19 @@ def main():
         al_acquisitions=al_acquisitions,
     )
     if not df_active.empty:
+        cols_no_curve = [c for c in df_active.columns if c != "curve"]
+        df_active_summary = df_active[cols_no_curve].copy()
+
         print("\n=== Summary Table (Active Learning runs) ===")
-        print(df_active.to_string(index=False))
-        df_active.to_csv("run_summary_active.csv", index=False)
+        print(df_active_summary.to_string(index=False))
+        df_active_summary.to_csv("run_summary_active.csv", index=False)
 
-
+        df_curves = (
+            df_active[["acquisition", "model", "features_set", "split_type", "graph_mode", "curve"]]
+            .explode("curve", ignore_index=True)
+        )
+        curve_flat = pd.json_normalize(df_curves["curve"])
+        df_curves = pd.concat([df_curves.drop(columns=["curve"]), curve_flat], axis=1)
+        plot_f1_minority_vs_labels(df_curves)
 if __name__ == "__main__":
     main()
