@@ -39,9 +39,9 @@ def run_experiments(
                                 split_type=split,
                                 graph_mode=gm,
                                 seed_per_class=10,
-                                batch_size=50,
+                                batch_size=20,
                                 budget=100,
-                                max_epochs_per_round=100,
+                                max_epochs_per_round=20,
                                 rng_seed=42,
                                 acquisition=acquisition,
                             )
@@ -56,7 +56,7 @@ def main():
     feature_sets = ["local"]                # e.g., ["local"] to run only LOCAL. all available
     split_types  = ["temporal"]             # e.g., ["temporal"] to run only TEMPORAL. random available
 
-    al_acquisitions = ["entropy", "random"]  # choose between "entropy", "random", or both: ["entropy", "random"]
+    al_acquisitions = ["umcs", "entropy", "random", ]  # choose between "entropy", "random", or both: ["entropy", "random"]
 
     # Build only the variants you need (saves memory/time)
     data_variants = get_variants(

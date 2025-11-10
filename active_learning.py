@@ -1,3 +1,4 @@
+import math
 from typing import Dict, List
 import torch
 import torch.nn as nn
@@ -7,7 +8,19 @@ from sklearn.metrics import f1_score, classification_report, average_precision_s
 from torch_geometric.data import Data
 from models import build_model
 from training import _forward, epoch_loop, predict_with_threshold
+import os, random
+import numpy as np
 
+
+def _set_all_seeds(seed: int):
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True)
 
 @torch.no_grad()
 def compute_entropy(logits: torch.Tensor) -> torch.Tensor:
@@ -33,6 +46,67 @@ def pick_by_entropy(entropy: torch.Tensor, candidate_idx: torch.Tensor, k: int) 
     picked = cand[order[:take]]
     return torch.tensor(picked, dtype=torch.long, device=entropy.device)
 
+@torch.no_grad()
+def pick_umcs(
+    logits: torch.Tensor,
+    remaining_pool: torch.Tensor,
+    labeled_idx: torch.Tensor,
+    y_true: torch.Tensor,
+    k: int,
+    illicit_label: int = 1,
+    ) -> torch.Tensor:
+
+    device = logits.device
+    probs = F.softmax(logits, dim=1).clamp_min(1e-12)
+    p_illicit = probs[:, illicit_label]
+    pred = (p_illicit >= 0.5).long()  # 1=illicit, 0=licit בבינארי
+
+    s_k = labeled_idx.numel()
+    if s_k == 0:
+        ent = compute_entropy(logits)
+        return pick_by_entropy(ent, remaining_pool, k)
+
+    y_l = y_true[labeled_idx]
+    s_illicit = int((y_l == illicit_label).sum().item())
+    s_licit = s_k - s_illicit
+    mu_k = s_k / 2.0
+
+    minority_is_illicit = (s_illicit < mu_k)
+    if not minority_is_illicit:
+        ent = compute_entropy(logits)
+        return pick_by_entropy(ent, remaining_pool, k)
+
+    m_k = int(max(0, math.floor(mu_k - s_illicit)))
+    m_k = min(m_k, k)
+
+    pool_mask = torch.isin(torch.arange(y_true.size(0), device=device), remaining_pool)
+    cand_idx = torch.nonzero(pool_mask & (pred == illicit_label), as_tuple=True)[0]
+
+    picked_list = []
+
+    if m_k > 0 and cand_idx.numel() > 0:
+        take = min(m_k, cand_idx.numel())
+        order = torch.argsort(p_illicit[cand_idx], descending=False)  # קטן->גדול
+        chosen_illicit = cand_idx[order[:take]]
+        picked_list.append(chosen_illicit)
+
+    k_remaining = k - (picked_list[0].numel() if picked_list else 0)
+    if k_remaining > 0:
+        if picked_list:
+            already = torch.unique(torch.cat(picked_list))
+            fill_pool = remaining_pool[~torch.isin(remaining_pool, already)]
+        else:
+            fill_pool = remaining_pool
+
+        if fill_pool.numel() > 0:
+            ent = compute_entropy(logits)
+            fill = pick_by_entropy(ent, fill_pool, k_remaining)
+            picked_list.append(fill)
+
+    if not picked_list:
+        return torch.empty(0, dtype=torch.long, device=device)
+    return torch.unique(torch.cat(picked_list))
+
 
 def run_active_learning(
         data: Data,
@@ -49,6 +123,8 @@ def run_active_learning(
 ) -> Dict:
     """Pool-based Active Learning on the training split.
     """
+    _set_all_seeds(rng_seed)
+
     tag = f"{model_name.upper()} | {features_set.upper()} | {split_type.upper()} | {graph_mode.upper()} | {acquisition.upper()}"
     print(f"\n===== RUN (Active Learning): {tag}\n")
 
@@ -81,25 +157,21 @@ def run_active_learning(
     total_acquired = 0
     round_id = 0
 
-    # best_val_f1_overall = -1.0
-    # best_test_f1_at_best = 0.0
-    # best_model_state = None  # Save best model across all AL rounds
-    # best_round_model_cfg = None
-
     # AL loop
-    acquisition = acquisition.lower()
-    if acquisition not in {"entropy", "random"}:
-        raise ValueError(f"Unsupported acquisition strategy: {acquisition}")
-
-
     curve = []  # list of dicts: {"round": int, "n_labeled": int, "f1_pos_val": float, "auprc_val": float}
     best_t = 0.5
 
     while total_acquired <= budget and remaining_pool.numel() > 0:
         round_id += 1
-        print(f"[AL-Round {round_id}]")
+        # print(f"[AL-Round {round_id}]")
         dyn_train_mask = make_dynamic_train_mask(n_nodes, torch.sort(labeled_idx).values, device)
         data.train_mask = dyn_train_mask
+
+        y_l = y_all[labeled_idx]
+        n_illicit = int((y_l == 1).sum().item())  # עדכן/י 1 אם ה"לא חוקי" אצלך זה 1; אם זה 0- החלף
+        n_licit = int((y_l == 0).sum().item())
+        print(
+            f"[AL-Round {round_id}] Labeled dist (start): Licit={n_licit} | Illicit={n_illicit} | Total={y_l.numel()}")
 
         model, cfg = build_model(model_name, in_dim=data.num_node_features, out_dim=2)
         model = model.to(device)
@@ -158,16 +230,28 @@ def run_active_learning(
         k = min(batch_size, budget - total_acquired, remaining_pool.numel())
         if k <= 0:
             break
-        if acquisition == "entropy":
-            model.eval()
-            with torch.no_grad():
-                logits = _forward(model, data)
-                entropy = compute_entropy(logits)
-            picked = pick_by_entropy(entropy, remaining_pool, k)
-        else:  # random
+        if acquisition == "random":
             perm = torch.randperm(remaining_pool.numel(), generator=rng)
             picked_cpu = remaining_pool.detach().cpu()[perm[:k]]
             picked = picked_cpu.to(remaining_pool.device)
+        else:
+            model.eval()
+            with torch.no_grad():
+                logits = _forward(model, data)
+
+            if acquisition == "entropy":
+                entropy = compute_entropy(logits)
+                picked = pick_by_entropy(entropy, remaining_pool, k)
+
+            else:
+                picked = pick_umcs(
+                    logits=logits,
+                    remaining_pool=remaining_pool,
+                    labeled_idx=torch.sort(labeled_idx).values,
+                    y_true=y_all,
+                    k=k,
+                    illicit_label=1,  
+                )
 
         labeled_idx = torch.unique(torch.cat([labeled_idx, picked]))
         total_acquired += picked.numel()
