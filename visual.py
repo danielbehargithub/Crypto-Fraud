@@ -2,27 +2,9 @@ import pandas as pd
 import torch
 import networkx as nx
 import matplotlib.pyplot as plt
+import numpy as np
+from typing import Dict, Optional, Tuple, List
 
-def plot_f1_minority_vs_labels(df_curves, title="F1 (minority) vs. #Labeled", save_path="al_f1_curve.png"):
-    if df_curves.empty:
-        print("[plot] No curve data to plot.")
-        return
-
-    # ממיינים כדי לקבל קווים חלקים
-    dfc = df_curves.sort_values(["acquisition", "n_labeled"]).copy()
-
-    plt.figure(figsize=(8, 5.5))
-    for acq, g in dfc.groupby("acquisition"):
-        plt.plot(g["n_labeled"], g["f1_pos_val"], marker="o", linewidth=2, label=str(acq))
-
-    plt.xlabel("Number of labeled samples (cumulative)")
-    plt.ylabel("F1 (minority class)")
-    plt.title(title)
-    plt.grid(True, alpha=0.3)
-    plt.legend(title="Acquisition")
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=180)
-    print(f"[plot] Saved: {save_path}")
 
 def plot_data():
     nodes_column_names = ['txId', 'time_step'] + [f'feature_{i}' for i in range(1, 166)]
@@ -75,3 +57,85 @@ def plot_data():
     nx.draw(subgraph, pos, node_color=node_colors, with_labels=False, node_size=50, edge_color='lightgray')
     plt.title("Elliptic Subgraph Visualization (Red=Illicit, Green=Licit, Gray=Unknown)")
     plt.show()
+
+
+
+
+
+def plot_al_by_model(
+    csv_path: str = "run_curves.csv",
+    facet_col: str = "model",           # פאנל=מודל
+    line_col: str = "acquisition",      # קו=שיטת AL
+    metric: str = "auto",               # auto = בוחר test אם קיים
+    label_col: str = "n_labeled",
+    filters: Optional[Dict[str, object]] = None,  # סינון לקונפיגורציה מייצגת
+    agg: str = "mean",                  # ממוצע/חציון של F1 בכל n_labeled
+    ci: Optional[str] = "sem",          # שגיאה (std/sem) או None
+    figsize: Tuple[int,int] = (8,5)
+):
+    # טען CSV
+    df = pd.read_csv(csv_path)
+
+    # קביעת מטריקה
+    if metric == "auto":
+        metric = "best_test_f1" if "best_test_f1" in df.columns else "best_val_f1"
+
+    # טיפולים בסיסיים
+    df[label_col] = pd.to_numeric(df[label_col], errors="coerce")
+
+    # החלת פילטרים אם רוצים להשוות רק קונפיגורציה אחת (למשל רק DAG/local)
+    if filters:
+        for k, v in filters.items():
+            df = df[df[k] == v]
+
+    # ערכי הפאנל (למשל כל המודלים)
+    facet_values = sorted(df[facet_col].dropna().unique())
+
+    for fv in facet_values:
+        sub = df[df[facet_col] == fv].copy()
+        if sub.empty:
+            continue
+
+        # אגרגציה: ממוצע/חציון לכל (AL method, n_labeled)
+        grp = sub.groupby([line_col, label_col], as_index=False).agg(
+            f1=(metric, agg),
+            count=(metric, "count"),
+            std=(metric, "std")
+        )
+
+        # ציור
+        plt.figure(figsize=figsize)
+
+        for lc, g in grp.groupby(line_col):
+            g = g.sort_values(label_col)
+            x = g[label_col].values
+            y = g["f1"].values
+            plt.plot(x, y, marker="o", label=str(lc))
+
+            # סרטי שגיאה (רשות)
+            if ci in ("std", "sem"):
+                err = g["std"].fillna(0).values
+                if ci == "sem":
+                    n = g["count"].clip(lower=1).values
+                    err = err / np.sqrt(n)
+                plt.fill_between(x, y - err, y + err, alpha=0.15)
+
+        plt.title(f"{facet_col} = {fv}")
+        plt.xlabel("Number of labeled samples")
+        plt.ylabel("F1 score")
+        plt.grid(True, alpha=0.3)
+        plt.legend(title=line_col)
+        plt.tight_layout()
+        plt.show()
+
+plot_al_by_model("run_curves.csv")
+
+plot_al_by_model(
+    "run_curves.csv",
+    filters={
+        "graph_mode": "dag",
+        "features_set": "local",
+        "split_type": "temporal",
+        "in_channels": 94,
+    }
+)

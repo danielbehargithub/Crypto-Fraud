@@ -4,7 +4,9 @@ import pandas as pd
 from data import get_variants
 from active_learning import run_active_learning
 from training import run
-from visual import plot_f1_minority_vs_labels
+from visual import plot_al_by_model
+
+
 def run_experiments(
     run_type: str,
     *,
@@ -40,7 +42,7 @@ def run_experiments(
                                 graph_mode=gm,
                                 seed_per_class=10,
                                 batch_size=20,
-                                budget=100,
+                                budget=20,
                                 max_epochs_per_round=20,
                                 rng_seed=42,
                                 acquisition=acquisition,
@@ -51,12 +53,12 @@ def run_experiments(
 
 def main():
     # Choose subsets here:
-    graph_modes  = ["dag"]   # or ["dag"] or ["undirected"]
-    model_names  = ["GCN"]                  # e.g., ["GCN"] to run only GCN. MLP available
-    feature_sets = ["local"]                # e.g., ["local"] to run only LOCAL. all available
+    graph_modes  = ["dag", "undirected"]   # or ["dag"] or ["undirected"]
+    model_names  = ["EVOLVEGCN", "MLP", "GCN"]                  # e.g., ["GCN"] to run only GCN. MLP available
+    feature_sets = ["local", "all"]                # e.g., ["local"] to run only LOCAL. all available
     split_types  = ["temporal"]             # e.g., ["temporal"] to run only TEMPORAL. random available
 
-    al_acquisitions = ["sequential","umcs", "entropy", "random", ]  # choose between "entropy", "random", or both: ["entropy", "random"]
+    al_acquisitions = ["entropy", "random", "umcs", "sequential"]  # choose between "entropy", "random", or both: ["entropy", "random"]
 
     # Build only the variants you need (saves memory/time)
     data_variants = get_variants(
@@ -98,11 +100,12 @@ def main():
         df_active_summary.to_csv("run_summary_active.csv", index=False)
 
         df_curves = (
-            df_active[["acquisition", "model", "features_set", "split_type", "graph_mode", "curve"]]
+            df_active[["acquisition", "model", "features_set", "split_type", "graph_mode", "in_channels", "curve"]]
             .explode("curve", ignore_index=True)
         )
         curve_flat = pd.json_normalize(df_curves["curve"])
         df_curves = pd.concat([df_curves.drop(columns=["curve"]), curve_flat], axis=1)
-        plot_f1_minority_vs_labels(df_curves)
+        df_curves.to_csv("run_curves.csv", index=False)
+        plot_al_by_model("run_curves.csv")
 if __name__ == "__main__":
     main()

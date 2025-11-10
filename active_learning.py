@@ -258,7 +258,8 @@ def run_active_learning(
         curve.append({
             "round": round_id,
             "n_labeled": labeled_idx.numel(),
-            "f1_pos_val": best_val_f1,
+            "best_val_f1": best_val_f1,
+            "best_test_f1": best_test_f1,
             "auprc_val": auprc,
             "best_epoch": best_epoch,
             "stop_epoch": stop_epoch,
