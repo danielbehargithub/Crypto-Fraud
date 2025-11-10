@@ -108,6 +108,46 @@ def pick_umcs(
     return torch.unique(torch.cat(picked_list))
 
 
+def build_temporal_groups(
+    timesteps: torch.Tensor,  # data.time_step (על ה-device)
+    train_min_t: int,         # למשל 1
+    train_max_t: int,         # למשל 34  (שימו לב: ב-data.py train=1..34)
+    n_groups: int,
+) -> list[torch.Tensor]:
+    """
+    מחזיר רשימה של וקטורי אינדקסים (node indices) – כל איבר הוא קבוצה רציפה בזמן.
+    הקבוצות מחלקות את טווח train_min_t..train_max_t לפי הסדר.
+    """
+    device = timesteps.device
+    n_groups = max(1, int(n_groups))
+
+    # כל הנקודות שבטווח ה-train
+    in_train = (timesteps >= train_min_t) & (timesteps <= train_max_t)
+    idx_train = torch.nonzero(in_train, as_tuple=True)[0]
+    ts_train = timesteps[idx_train]
+
+    # טווח ה-timesteps (רק ערכי זמן, לא אינדקסים)
+    uniq_ts = torch.arange(train_min_t, train_max_t + 1, device=device)
+    total_ts = uniq_ts.numel()
+
+    base = total_ts // n_groups
+    extra = total_ts % n_groups  # הקבוצות הראשונות יקבלו +1
+
+    groups: list[torch.Tensor] = []
+    start = 0
+    for g in range(n_groups):
+        length = base + (1 if g < extra else 0)
+        if length <= 0:
+            groups.append(torch.empty(0, dtype=torch.long, device=device))
+            continue
+        ts_slice = uniq_ts[start:start + length]
+        start += length
+        # כל האינדקסים ב-train שה-time_step שלהם באחת מהתתי-ערכים שב-slice
+        in_group = idx_train[torch.isin(ts_train, ts_slice)]
+        groups.append(in_group)
+
+    return groups
+
 def run_active_learning(
         data: Data,
         model_name: str,
@@ -160,6 +200,16 @@ def run_active_learning(
     # AL loop
     curve = []  # list of dicts: {"round": int, "n_labeled": int, "f1_pos_val": float, "auprc_val": float}
     best_t = 0.5
+    n_rounds_total = max(1, budget // batch_size)
+    n_groups = max(1, n_rounds_total)
+    temporal_groups = None
+    if acquisition == "sequential":
+        temporal_groups = build_temporal_groups(
+            timesteps=data.time_step,
+            train_min_t=1,
+            train_max_t=34,
+            n_groups=n_groups,
+        )
 
     while total_acquired <= budget and remaining_pool.numel() > 0:
         round_id += 1
@@ -215,13 +265,6 @@ def run_active_learning(
             "final_lr": final_lr,
             "best_threshold": best_t,
         })
-        # Track best model across all AL rounds (standard practice)
-        # if best_val_f1 > best_val_f1_overall:
-        #     best_val_f1_overall = best_val_f1
-        #     best_test_f1_at_best = best_test_f1
-        #     # Save best model state
-        #     best_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
-        #     best_round_model_cfg = cfg
 
         print(
             f"[AL-Round {round_id}] Labeled={labeled_idx.numel()} | Best Val F1={best_val_f1:.4f} | Test F1 best={best_test_f1:.4f} "
@@ -243,7 +286,7 @@ def run_active_learning(
                 entropy = compute_entropy(logits)
                 picked = pick_by_entropy(entropy, remaining_pool, k)
 
-            else:
+            elif acquisition == "umcs":
                 picked = pick_umcs(
                     logits=logits,
                     remaining_pool=remaining_pool,
@@ -252,6 +295,33 @@ def run_active_learning(
                     k=k,
                     illicit_label=1,  
                 )
+            else:
+                curr_gid = round_id % len(temporal_groups)
+                group_idx = temporal_groups[curr_gid]
+                pool_mask = torch.isin(remaining_pool, group_idx)
+                pool_group = remaining_pool[pool_mask]
+                picked_group = pick_umcs(
+                    logits=logits,
+                    remaining_pool=pool_group,
+                    labeled_idx=torch.sort(labeled_idx).values,
+                    y_true=y_all,
+                    k=k,
+                    illicit_label=1,
+                )
+                if picked_group.numel() == k:
+                    picked = picked_group
+                else:
+                    k_rem = k - picked_group.numel()
+                    if k_rem > 0:
+                        entropy = compute_entropy(logits)
+                        if picked_group.numel() > 0:
+                            fill_pool = remaining_pool[~torch.isin(remaining_pool, picked_group)]
+                        else:
+                            fill_pool = remaining_pool
+                        fill = pick_by_entropy(entropy, fill_pool, k_rem)
+                        picked = torch.unique(torch.cat([picked_group, fill]))
+                    else:
+                        picked = picked_group
 
         labeled_idx = torch.unique(torch.cat([labeled_idx, picked]))
         total_acquired += picked.numel()

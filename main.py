@@ -56,7 +56,7 @@ def main():
     feature_sets = ["local"]                # e.g., ["local"] to run only LOCAL. all available
     split_types  = ["temporal"]             # e.g., ["temporal"] to run only TEMPORAL. random available
 
-    al_acquisitions = ["umcs", "entropy", "random", ]  # choose between "entropy", "random", or both: ["entropy", "random"]
+    al_acquisitions = ["sequential","umcs", "entropy", "random", ]  # choose between "entropy", "random", or both: ["entropy", "random"]
 
     # Build only the variants you need (saves memory/time)
     data_variants = get_variants(
