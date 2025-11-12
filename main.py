@@ -54,7 +54,7 @@ def run_experiments(
 def main():
     # Choose subsets here:
     graph_modes  = ["dag", "undirected"]   # or ["dag"] or ["undirected"]
-    model_names  = ["EVOLVEGCN", "MLP", "GCN"]                  # e.g., ["GCN"] to run only GCN. MLP available
+    model_names  = ["MLP", "GCN"]                  # e.g., ["GCN"] to run only GCN. MLP available
     feature_sets = ["local", "all"]                # e.g., ["local"] to run only LOCAL. all available
     split_types  = ["temporal"]             # e.g., ["temporal"] to run only TEMPORAL. random available
 
@@ -67,19 +67,20 @@ def main():
         split_types=tuple(split_types),
     )
 
-    # ---- Passive runs ----
-    # df_passive = run_experiments(
-    #     "passive",
-    #     data_variants=data_variants,
-    #     graph_modes=graph_modes,
-    #     model_names=model_names,
-    #     feature_sets=feature_sets,
-    #     split_types=split_types,
-    # )
-    # if not df_passive.empty:
-    #     print("\n=== Summary Table (Passive runs) ===")
-    #     print(df_passive.to_string(index=False))
-    #     df_passive.to_csv("run_summary_passive.csv", index=False)
+    #---- Passive runs ----
+    df_passive = run_experiments(
+        "passive",
+        data_variants=data_variants,
+        graph_modes=graph_modes,
+        model_names=model_names,
+        feature_sets=feature_sets,
+        split_types=split_types,
+    )
+    if not df_passive.empty:
+        print("\n=== Summary Table (Passive runs) ===")
+        df_passive = df_passive.sort_values(by="test_f1", ascending=False)
+        print(df_passive.to_string(index=False))
+        df_passive.to_csv("run_summary_passive.csv", index=False)
 
     # ---- Active Learning runs ----
     df_active = run_experiments(
@@ -96,9 +97,9 @@ def main():
         df_active_summary = df_active[cols_no_curve].copy()
 
         print("\n=== Summary Table (Active Learning runs) ===")
+        df_active_summary = df_active_summary.sort_values(by="test_f1", ascending=False)
         print(df_active_summary.to_string(index=False))
         df_active_summary.to_csv("run_summary_active.csv", index=False)
-
         df_curves = (
             df_active[["acquisition", "model", "features_set", "split_type", "graph_mode", "in_channels", "curve"]]
             .explode("curve", ignore_index=True)
@@ -106,6 +107,5 @@ def main():
         curve_flat = pd.json_normalize(df_curves["curve"])
         df_curves = pd.concat([df_curves.drop(columns=["curve"]), curve_flat], axis=1)
         df_curves.to_csv("run_curves.csv", index=False)
-        plot_al_by_model("run_curves.csv")
 if __name__ == "__main__":
     main()

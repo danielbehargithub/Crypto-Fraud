@@ -218,7 +218,7 @@ def run_active_learning(
         data.train_mask = dyn_train_mask
 
         y_l = y_all[labeled_idx]
-        n_illicit = int((y_l == 1).sum().item())  # עדכן/י 1 אם ה"לא חוקי" אצלך זה 1; אם זה 0- החלף
+        n_illicit = int((y_l == 1).sum().item())
         n_licit = int((y_l == 0).sum().item())
         print(
             f"[AL-Round {round_id}] Labeled dist (start): Licit={n_licit} | Illicit={n_illicit} | Total={y_l.numel()}")
@@ -258,6 +258,8 @@ def run_active_learning(
         curve.append({
             "round": round_id,
             "n_labeled": labeled_idx.numel(),
+            "n_licit": n_licit,
+            "n_illicit": n_illicit,
             "best_val_f1": best_val_f1,
             "best_test_f1": best_test_f1,
             "auprc_val": auprc,
