@@ -4,6 +4,20 @@ import pandas as pd
 import torch
 import networkx as nx
 from typing import Dict, Optional, Tuple, List
+import yaml
+from pathlib import Path
+
+CFG_VIS = yaml.safe_load(open("configs/config_visual.yaml", "r"))["visual"]
+
+DATASET_DIR = Path(CFG_VIS["dataset_dir"])
+RESULTS_DIR = Path(CFG_VIS["results_dir"])
+VIS_DIR = Path(CFG_VIS["vis_dir"])
+
+AL_VIS_DIR = VIS_DIR / CFG_VIS.get("al_vis_subdir", "AL_visualizations")
+AL_PLOTS_DIR = AL_VIS_DIR / CFG_VIS.get("al_plots_subdir", "plots")
+AL_RATIO_DIR = AL_VIS_DIR / CFG_VIS.get("al_ratio_subdir", "illicit_ratio")
+
+FILES = CFG_VIS["files"]
 
 # -------------------------------
 # 1) Data preview
@@ -14,10 +28,13 @@ def plot_data():
     """
     nodes_column_names = ['txId', 'time_step'] + [f'feature_{i}' for i in range(1, 166)]
 
-    nodes_df = pd.read_csv("elliptic_bitcoin_dataset/elliptic_txs_features.csv",
-                           header=None, names=nodes_column_names)
-    edges_df = pd.read_csv("elliptic_bitcoin_dataset/elliptic_txs_edgelist.csv")
-    labels_df = pd.read_csv("elliptic_bitcoin_dataset/elliptic_txs_classes.csv")
+    nodes_df = pd.read_csv(
+        DATASET_DIR / "elliptic_txs_features.csv",
+        header=None,
+        names=nodes_column_names,
+    )
+    edges_df = pd.read_csv(DATASET_DIR / "elliptic_txs_edgelist.csv")
+    labels_df = pd.read_csv(DATASET_DIR / "elliptic_txs_classes.csv")
 
     # Attach labels
     nodes_df = nodes_df.merge(labels_df, on='txId', how='left')
@@ -53,7 +70,7 @@ def plot_data():
     nx.draw(subgraph, pos, node_color=node_colors, with_labels=False,
             node_size=50, edge_color='lightgray')
     plt.title("Elliptic Subgraph (Red=Illicit, Green=Licit, Gray=Unknown)")
-    plt.savefig("visualizations/elliptic_subgraph.png")
+    plt.savefig(VIS_DIR / FILES["elliptic_subgraph"])
 
 
 
@@ -116,7 +133,7 @@ def delta_boxplot_from_csv(
     title: Optional[str] = None,
     figsize: Tuple[int, int] = (7, 4.5),
     showfliers: bool = False,
-    save_path: Optional[str] = "visualizations/boxplot.png",
+    save_path: str | Path = None,
     show: bool = False,
 ):
     """
@@ -130,6 +147,9 @@ def delta_boxplot_from_csv(
     )
     if deltas.empty:
         return None
+
+    if save_path is None:
+        raise ValueError("save_path must be provided by the caller.")
 
     dcol = "delta"
     cats = ["ALL"]
@@ -165,7 +185,7 @@ def compute_leaderboard(
     csv_path: str,
     metric: str = "test_f1",
     group_col: str = "model",
-    output_path: str = "visualizations/rank_summary.csv",
+    output_path: str | Path = None,
 ):
     """
     Create a unified leaderboard table combining:
@@ -205,7 +225,8 @@ def compute_leaderboard(
         leaderboard[col] = leaderboard[col].round(3)
 
     leaderboard = leaderboard.sort_values(f"mean_rank").reset_index(drop=True)
-    leaderboard.to_csv(output_path, index=False)
+    if output_path is not None:
+        leaderboard.to_csv(output_path, index=False)
     return leaderboard
 
 ##
@@ -213,8 +234,8 @@ def compute_leaderboard(
 ##
 
 def plot_al_by_model(
-    csv_path: str = "results/run_curves.csv",
-    passive_csv_path: str = "results/run_summary_passive.csv",
+    csv_path: str,
+    passive_csv_path: str,
     facet_col: str = "model",                # facet = one panel per model
     line_col: str = "method",           # line = AL strategy
     metric: str = "test_f1",                    # auto prefers test if present
@@ -224,6 +245,17 @@ def plot_al_by_model(
     ci: Optional[str] = "sem",               # "std"/"sem"/None error ribbon
     figsize: Tuple[int,int] = (8,5),
 ):
+    """
+    Plot Active Learning performance curves per model.
+
+    For each value of `facet_col` (e.g. each model), this function:
+      - aggregates AL runs (from `csv_path`) across seeds/configs
+        to produce one mean curve per AL method (line_col),
+      - optionally adds an uncertainty band (std or sem),
+      - overlays a horizontal passive baseline taken from
+        `passive_csv_path` (same facet, same filters),
+      - saves each panel as a PNG under `visualizations/AL_visualizations/plots/`.
+    """
     df = pd.read_csv(csv_path)
     df[label_col] = pd.to_numeric(df[label_col], errors="coerce")
 
@@ -297,13 +329,13 @@ def plot_al_by_model(
         plt.legend(title=line_col)
         plt.tight_layout()
 
-        save_name = f"visualizations/AL_visualizations/plots/plot_{fv}.png".replace(" ", "_")
+        save_name = AL_PLOTS_DIR / f"plot_{fv}.png".replace(" ", "_")
         plt.savefig(save_name, dpi=200, bbox_inches="tight")
         plt.close()
 
 
 def plot_illicit_ratio(
-    csv_path: str = "results/run_curves.csv",
+    csv_path: str,
     facet_col: str = "model",
     line_col: str = "method",
     label_col: str = "n_labeled",
@@ -344,7 +376,7 @@ def plot_illicit_ratio(
         plt.legend(title=line_col)
         plt.tight_layout()
 
-        save_name = f"visualizations/AL_visualizations/iliicit_ratio/illicit_ratio_{fv}.png".replace(" ", "_")
+        save_name = AL_RATIO_DIR / f"illicit_ratio_{fv}.png".replace(" ", "_")
         plt.savefig(save_name, dpi=200, bbox_inches="tight")
         plt.close()
 
@@ -375,7 +407,7 @@ def _partial_corr_1d(x, y, z):
 
 
 def compute_balance_partial_corr(
-    csv_path: str = "results/run_curves.csv",
+    csv_path: str,
     model_col: str = "model",
     al_col: str = "method",
     label_col: str = "n_labeled",
@@ -440,42 +472,69 @@ def compute_balance_partial_corr(
     out.to_csv(output_path, index=False)
     return out
 
-plot_data()
-
-delta_boxplot_from_csv(
-    csv_path="results/run_summary_passive.csv",
-    factor_col="graph_mode", a="dag", b="undirected",
-    x_col="model", metric="test_f1",
-    group_cols = ["model", "features_set", "split_type", "in_channels"],
-    save_path="visualizations/boxplot_graph_mode.png",
-)
-
-delta_boxplot_from_csv(
-    csv_path="results/run_summary_passive.csv",
-    factor_col="features_set", a="all", b="local",
-    x_col="model", metric="test_f1",
-    group_cols = ["model", "graph_mode", "split_type"],
-    save_path="visualizations/boxplot_features_set.png",
-)
-
-compute_leaderboard("results/run_summary_passive.csv", metric="test_f1",
-                    group_col="model", output_path="visualizations/leaderboard_passive.csv")
-
-compute_balance_partial_corr()
-
-plot_illicit_ratio(
-    csv_path="results/run_curves.csv",
-    facet_col="model",
-    line_col="method",
-)
+def run_all_visualizations():
+    """
+    Convenience entry point to recompute all visual artifacts
+    (figures, CSV summaries) for the current experiment results.
+    """
+    passive_csv = RESULTS_DIR / FILES["summary_passive"]
+    active_csv = RESULTS_DIR / FILES["summary_active"]
+    curves_csv = RESULTS_DIR / FILES["run_curves"]
 
 
-compute_leaderboard("results/run_summary_active.csv", metric="test_f1",
-                    group_col="model", output_path="visualizations/AL_visualizations/leaderboard_AL.csv")
+    plot_data()
 
-# plot_al_by_model("results/run_curves.csv", facet_col="model", line_col="method", metric="best_test_f1")
+    delta_boxplot_from_csv(
+        csv_path=passive_csv,
+        factor_col="graph_mode", a="dag", b="undirected",
+        x_col="model", metric="test_f1",
+        group_cols=["model", "features_set", "split_type", "in_channels"],
+        save_path=VIS_DIR / FILES["boxplot_graph_mode"],
+    )
 
-plot_al_by_model("results/run_curves.csv", facet_col="model", line_col="method", metric="best_val_f1",
-                 label_col="n_labeled", filters={"graph_mode":"dag","features_set":"local"})
+    delta_boxplot_from_csv(
+        csv_path=passive_csv,
+        factor_col="features_set", a="all", b="local",
+        x_col="model", metric="test_f1",
+        group_cols=["model", "graph_mode", "split_type"],
+        save_path=VIS_DIR / FILES["boxplot_features_set"],
+    )
+
+    compute_leaderboard(
+        csv_path=passive_csv,
+        metric="test_f1",
+        group_col="model",
+        output_path=VIS_DIR / FILES["leaderboard_passive"],
+    )
+
+    compute_balance_partial_corr(
+        csv_path=curves_csv,
+        output_path=AL_VIS_DIR / FILES["illicit_balance_effect"],
+    )
+
+    plot_illicit_ratio(
+        csv_path=curves_csv,
+        facet_col="model",
+        line_col="method",
+    )
+
+    compute_leaderboard(
+        csv_path=active_csv,
+        metric="test_f1",
+        group_col="model",
+        output_path=AL_VIS_DIR / FILES["leaderboard_active"],
+    )
 
 
+    plot_al_by_model(
+        csv_path=curves_csv,
+        passive_csv_path=passive_csv,
+        facet_col="model",
+        line_col="method",
+        metric="best_val_f1",
+        label_col="n_labeled",
+        filters={"graph_mode": "dag", "features_set": "local"},
+    )
+
+if __name__ == "__main__":
+    run_all_visualizations()
