@@ -1,5 +1,4 @@
 # models.py
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -247,18 +246,6 @@ class DySAT(nn.Module):
 
         return logits_full
 
-
-# def build_model(kind: str, in_dim: int, out_dim: int = 2):
-#     k = kind.upper()
-#     if k == "GCN":
-#         return GCN(in_channels=in_dim, hidden_channels=64, out_channels=out_dim)
-#     if k == "MLP":
-#         return MLP(in_channels=in_dim, hidden1=128, hidden2=64, out_channels=out_dim)
-#     if k == "EVOLVEGCN":
-#         return EvolveGCN(in_channels=in_dim, hidden_channels=128, out_channels=out_dim)
-#     if k == "DYSAT":
-#         return DySAT(in_channels=in_dim, struct_hidden=128, struct_out=128, out_channels=out_dim)
-#     raise ValueError(f"Unknown model kind: {kind}")
 
 def build_model(kind: str, in_dim: int, out_dim: int = 2):
     kind = kind.upper()

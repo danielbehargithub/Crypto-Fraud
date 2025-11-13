@@ -1,10 +1,8 @@
 import copy
-
 import pandas as pd
 from data import get_variants
 from active_learning import run_active_learning
 from training import run
-from visual import plot_al_by_model
 
 
 def run_experiments(
@@ -80,7 +78,7 @@ def main():
         print("\n=== Summary Table (Passive runs) ===")
         df_passive = df_passive.sort_values(by="test_f1", ascending=False)
         print(df_passive.to_string(index=False))
-        df_passive.to_csv("run_summary_passive.csv", index=False)
+        df_passive.to_csv("results/run_summary_passive.csv", index=False)
 
     # ---- Active Learning runs ----
     df_active = run_experiments(
@@ -99,13 +97,13 @@ def main():
         print("\n=== Summary Table (Active Learning runs) ===")
         df_active_summary = df_active_summary.sort_values(by="test_f1", ascending=False)
         print(df_active_summary.to_string(index=False))
-        df_active_summary.to_csv("run_summary_active.csv", index=False)
+        df_active_summary.to_csv("results/run_summary_active.csv", index=False)
         df_curves = (
             df_active[["acquisition", "model", "features_set", "split_type", "graph_mode", "in_channels", "curve"]]
             .explode("curve", ignore_index=True)
         )
         curve_flat = pd.json_normalize(df_curves["curve"])
         df_curves = pd.concat([df_curves.drop(columns=["curve"]), curve_flat], axis=1)
-        df_curves.to_csv("run_curves.csv", index=False)
+        df_curves.to_csv("results/run_curves.csv", index=False)
 if __name__ == "__main__":
     main()

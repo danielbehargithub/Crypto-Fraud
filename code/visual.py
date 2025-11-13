@@ -6,8 +6,7 @@ import networkx as nx
 from typing import Dict, Optional, Tuple, List
 
 # -------------------------------
-# 1) Data preview (kept as-is, comments in English)
-# -------------------------------
+# 1) Data preview
 def plot_data():
     """
     Quick NetworkX visualization of an Elliptic subgraph, color-coded by label.
@@ -54,14 +53,13 @@ def plot_data():
     nx.draw(subgraph, pos, node_color=node_colors, with_labels=False,
             node_size=50, edge_color='lightgray')
     plt.title("Elliptic Subgraph (Red=Illicit, Green=Licit, Gray=Unknown)")
-    plt.show()
-
+    plt.savefig("visualizations/elliptic_subgraph.png")
 
 # -------------------------------
 # 2) Learning curves per model with AL strategies (kept; English comments)
 # -------------------------------
 def plot_al_by_model(
-    csv_path: str = "run_curves.csv",
+    csv_path: str = "results/run_curves.csv",
     facet_col: str = "model",                # facet = one panel per model
     line_col: str = "acquisition",           # line = AL strategy
     metric: str = "test_f1",                    # auto prefers test if present
@@ -117,7 +115,7 @@ def plot_al_by_model(
         plt.legend(title=line_col)
         plt.tight_layout()
 
-        save_name = f"plot_{facet_col}_{fv}.png".replace(" ", "_")
+        save_name = f"visualizations/plot_{facet_col}_{fv}.png".replace(" ", "_")
         plt.savefig(save_name, dpi=200, bbox_inches="tight")
 
 
@@ -181,7 +179,7 @@ def delta_boxplot_from_csv(
     title: Optional[str] = None,
     figsize: Tuple[int, int] = (7, 4.5),
     showfliers: bool = False,
-    save_path: Optional[str] = "boxplot.png",
+    save_path: Optional[str] = "visualizations/boxplot.png",
     show: bool = False,
 ):
     """
@@ -233,7 +231,7 @@ def compute_leaderboard(
     csv_path: str,
     metric: str = "test_f1",
     group_col: str = "model",
-    output_path: str = "rank_summary.csv",
+    output_path: str = "visualizations/rank_summary.csv",
 ):
     """
     Create a unified leaderboard table combining:
@@ -278,7 +276,7 @@ def compute_leaderboard(
 
 
 def plot_illicit_ratio(
-    csv_path: str = "run_curves.csv",
+    csv_path: str = "results/run_curves.csv",
     facet_col: str = "model",
     line_col: str = "acquisition",
     label_col: str = "n_labeled",
@@ -320,7 +318,7 @@ def plot_illicit_ratio(
         plt.legend(title=line_col)
         plt.tight_layout()
 
-        save_name = f"illicit_ratio_{facet_col}_{fv}.png".replace(" ", "_")
+        save_name = f"visualizations/illicit_ratio_{facet_col}_{fv}.png".replace(" ", "_")
         plt.savefig(save_name, dpi=200, bbox_inches="tight")
         plt.close()
 
@@ -354,13 +352,13 @@ def _partial_corr_1d(x, y, z):
 
 
 def compute_balance_partial_corr(
-    csv_path: str = "run_curves.csv",
+    csv_path: str = "results/run_curves.csv",
     model_col: str = "model",
     al_col: str = "acquisition",
     label_col: str = "n_labeled",
     illicit_col: str = "n_illicit",
     f1_col: str = "best_test_f1",
-    output_path: str = "illicit_balance_effect.csv",
+    output_path: str = "visualizations/illicit_balance_effect.csv",
 ):
     """
     For each (model, acquisition), compute:
@@ -420,36 +418,39 @@ def compute_balance_partial_corr(
     out.to_csv(output_path, index=False)
     return out
 
+plot_data()
+
 res = compute_balance_partial_corr()
 print(res)
 
 plot_illicit_ratio(
-    csv_path="run_curves.csv",
+    csv_path="results/run_curves.csv",
     facet_col="model",
     line_col="acquisition",
 )
 
-compute_leaderboard("run_summary_passive.csv", metric="test_f1", group_col="model")
+compute_leaderboard("results/run_summary_passive.csv", metric="test_f1", group_col="model")
 
-compute_leaderboard("run_summary_active.csv", metric="test_f1", group_col="model", output_path="leaderboard_AL.csv")
+compute_leaderboard("results/run_summary_active.csv", metric="test_f1", group_col="model", output_path="visualizations/leaderboard_AL.csv")
 
-plot_al_by_model("run_curves.csv", facet_col="model", line_col="acquisition", metric="best_test_f1")
+plot_al_by_model("results/run_curves.csv", facet_col="model", line_col="acquisition", metric="best_test_f1")
 
-plot_al_by_model("run_curves.csv", facet_col="model", line_col="acquisition", metric="best_val_f1",
+plot_al_by_model("results/run_curves.csv", facet_col="model", line_col="acquisition", metric="best_val_f1",
                  label_col="n_labeled", filters={"graph_mode":"dag","features_set":"local"})
 
 delta_boxplot_from_csv(
-    csv_path="run_summary_passive.csv",
+    csv_path="results/run_summary_passive.csv",
     factor_col="graph_mode", a="dag", b="undirected",
     x_col="model", metric="test_f1",
     group_cols = ["model", "features_set", "split_type", "in_channels"],
-    save_path="boxplot_graph_mode.png",
+    save_path="visualizations/boxplot_graph_mode.png",
 )
 
 delta_boxplot_from_csv(
-    csv_path="run_summary_passive.csv",
+    csv_path="results/run_summary_passive.csv",
     factor_col="features_set", a="all", b="local",
     x_col="model", metric="test_f1",
     group_cols = ["model", "graph_mode", "split_type"],
-    save_path="boxplot_features_set.png",
+    save_path="visualizations/boxplot_features_set.png",
 )
+
