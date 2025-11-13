@@ -1,0 +1,5 @@
+model,method,n_points,corr_partial
+AL-GCN,entropy,12,-0.063
+AL-GCN,random,12,-0.178
+AL-MLP,entropy,12,-0.471
+AL-MLP,random,12,-0.519

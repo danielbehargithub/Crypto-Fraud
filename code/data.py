@@ -1,6 +1,5 @@
 # data.py
 # Purpose: Build PyG Data objects for Elliptic from the raw CSVs.
-# Notes: This mirrors your current data-building logic with minimal changes.
 
 from typing import Dict, Tuple
 import pandas as pd

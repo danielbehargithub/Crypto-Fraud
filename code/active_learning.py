@@ -159,13 +159,13 @@ def run_active_learning(
         budget: int = 200,
         max_epochs_per_round: int = 100,
         rng_seed: int = 42,
-        acquisition: str = "entropy",
+        method: str = "entropy",
 ) -> Dict:
     """Pool-based Active Learning on the training split.
     """
     _set_all_seeds(rng_seed)
 
-    tag = f"{model_name.upper()} | {features_set.upper()} | {split_type.upper()} | {graph_mode.upper()} | {acquisition.upper()}"
+    tag = f"{model_name.upper()} | {features_set.upper()} | {split_type.upper()} | {graph_mode.upper()} | {method.upper()}"
     print(f"\n===== RUN (Active Learning): {tag}\n")
 
     device = data.x.device
@@ -203,7 +203,7 @@ def run_active_learning(
     n_rounds_total = max(1, budget // batch_size)
     n_groups = max(1, n_rounds_total)
     temporal_groups = None
-    if acquisition == "sequential":
+    if method == "sequential":
         temporal_groups = build_temporal_groups(
             timesteps=data.time_step,
             train_min_t=1,
@@ -276,7 +276,7 @@ def run_active_learning(
         k = min(batch_size, budget - total_acquired, remaining_pool.numel())
         if k <= 0:
             break
-        if acquisition == "random":
+        if method == "random":
             perm = torch.randperm(remaining_pool.numel(), generator=rng)
             picked_cpu = remaining_pool.detach().cpu()[perm[:k]]
             picked = picked_cpu.to(remaining_pool.device)
@@ -285,11 +285,11 @@ def run_active_learning(
             with torch.no_grad():
                 logits = _forward(model, data)
 
-            if acquisition == "entropy":
+            if method == "entropy":
                 entropy = compute_entropy(logits)
                 picked = pick_by_entropy(entropy, remaining_pool, k)
 
-            elif acquisition == "umcs":
+            elif method == "umcs":
                 picked = pick_umcs(
                     logits=logits,
                     remaining_pool=remaining_pool,
@@ -338,7 +338,7 @@ def run_active_learning(
 
     return {
         "model": f"AL-{model_name.upper()}",
-        "acquisition": acquisition,
+        "method": method,
         "features_set": features_set,
         "split_type": split_type,
         "graph_mode": graph_mode,

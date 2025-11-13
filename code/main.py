@@ -13,7 +13,7 @@ def run_experiments(
     model_names,
     feature_sets,
     split_types,
-    al_acquisitions = None,
+    al_methods = None,
 ):
     """
     Generic experiment loop. Uses configs provided by main().
@@ -30,7 +30,7 @@ def run_experiments(
                         row = run(data_obj, model_name, fset, split, gm)
                         rows.append(row)
                     elif run_type == "active":
-                        for acquisition in al_acquisitions:
+                        for method in al_methods:
                             data_copy = copy.deepcopy(data_obj)
                             row = run_active_learning(
                                 data=data_copy,
@@ -43,7 +43,7 @@ def run_experiments(
                                 budget=20,
                                 max_epochs_per_round=20,
                                 rng_seed=42,
-                                acquisition=acquisition,
+                                method=method,
                             )
                             rows.append(row)
     return pd.DataFrame(rows)
@@ -56,7 +56,7 @@ def main():
     feature_sets = ["local", "all"]                # e.g., ["local"] to run only LOCAL. all available
     split_types  = ["temporal"]             # e.g., ["temporal"] to run only TEMPORAL. random available
 
-    al_acquisitions = ["entropy", "random", "umcs", "sequential"]  # choose between "entropy", "random", or both: ["entropy", "random"]
+    al_methods = ["entropy", "random", "umcs", "sequential"]  # choose between "entropy", "random", or both: ["entropy", "random"]
 
     # Build only the variants you need (saves memory/time)
     data_variants = get_variants(
@@ -88,7 +88,7 @@ def main():
         model_names=model_names,
         feature_sets=feature_sets,
         split_types=split_types,
-        al_acquisitions=al_acquisitions,
+        al_methods=al_methods,
     )
     if not df_active.empty:
         cols_no_curve = [c for c in df_active.columns if c != "curve"]
@@ -99,7 +99,7 @@ def main():
         print(df_active_summary.to_string(index=False))
         df_active_summary.to_csv("results/run_summary_active.csv", index=False)
         df_curves = (
-            df_active[["acquisition", "model", "features_set", "split_type", "graph_mode", "in_channels", "curve"]]
+            df_active[["method", "model", "features_set", "split_type", "graph_mode", "in_channels", "curve"]]
             .explode("curve", ignore_index=True)
         )
         curve_flat = pd.json_normalize(df_curves["curve"])

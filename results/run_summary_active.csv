@@ -1,4 +1,4 @@
-model,acquisition,features_set,split_type,graph_mode,in_channels,best_val_f1,test_f1,auprc,best_threshold,best_epoch,stop_epoch,final_lr,final_labeled
+model,method,features_set,split_type,graph_mode,in_channels,best_val_f1,test_f1,auprc,best_threshold,best_epoch,stop_epoch,final_lr,final_labeled
 AL-GCN,entropy,local,temporal,dag,94,0.4482,0.2576,0.2102,0.8,7,17,0.005,120
 AL-GCN,random,local,temporal,dag,94,0.494,0.2697,0.1976,0.8,5,15,0.005,120
 AL-GCN,entropy,all,temporal,dag,165,0.4702,0.2072,0.0987,0.8,4,14,0.005,120

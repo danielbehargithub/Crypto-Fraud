@@ -1,0 +1,3 @@
+model,mean_rank,mean_test_f1,proportional_mean_test_f1
+AL-MLP,4.75,0.32,0.731
+AL-GCN,11.75,0.219,0.302
