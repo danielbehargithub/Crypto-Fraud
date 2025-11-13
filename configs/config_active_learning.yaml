@@ -1,0 +1,13 @@
+active_learning:
+
+  # Scheduler hyperparameters
+  scheduler:
+    mode: "max"
+    factor: 0.5
+    patience: 3
+    min_lr: 0.002
+
+  # Sequential temporal grouping
+  sequential:
+    train_min_t: 1            # first train time step (inclusive)
+    train_max_t: 34           # last  train time step (inclusive)

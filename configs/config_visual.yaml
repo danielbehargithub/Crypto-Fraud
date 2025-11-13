@@ -1,0 +1,22 @@
+visual:
+  dataset_dir: "elliptic_bitcoin_dataset"
+  results_dir: "results"
+  vis_dir: "visualizations"
+
+  al_vis_subdir: "AL_visualizations"
+  al_plots_subdir: "plots"
+  al_ratio_subdir: "illicit_ratio"
+
+  files:
+    run_curves: "run_curves.csv"
+    summary_passive: "run_summary_passive.csv"
+    summary_active: "run_summary_active.csv"
+
+    boxplot_graph_mode: "boxplot_graph_mode.png"
+    boxplot_features_set: "boxplot_features_set.png"
+
+    leaderboard_passive: "leaderboard_passive.csv"
+    leaderboard_active: "leaderboard_AL.csv"
+
+    elliptic_subgraph: "elliptic_subgraph.png"
+    illicit_balance_effect: "illicit_balance_effect.csv"

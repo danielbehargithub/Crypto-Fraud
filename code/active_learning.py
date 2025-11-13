@@ -7,12 +7,20 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.metrics import f1_score, classification_report, average_precision_score
 from torch_geometric.data import Data
 from models import build_model
-from training import _forward, epoch_loop, predict_with_threshold
+from training import _forward, epoch_loop, predict_with_threshold, compute_class_weights
 import os, random
 import numpy as np
+import yaml
+
+AL_CFG = yaml.safe_load(open("configs/config_active_learning.yaml"))["active_learning"]
 
 
 def _set_all_seeds(seed: int):
+    """
+    This configures Python, NumPy and PyTorch (CPU and CUDA) to use the
+    given seed, and turns on deterministic behavior in cuDNN so that
+    repeated runs with the same configuration produce the same results.
+    """
     os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
@@ -24,13 +32,21 @@ def _set_all_seeds(seed: int):
 
 @torch.no_grad()
 def compute_entropy(logits: torch.Tensor) -> torch.Tensor:
-    """Return per-node entropy (higher = more uncertain)."""
+    """
+    Compute per-node predictive entropy from raw logits.
+
+    Softmax is applied over the class dimension to obtain probabilities,
+    then the (Shannon) entropy is computed as:
+        H(p) = -sum_c p_c * log(p_c)
+
+    Higher entropy means higher uncertainty about the predicted class.
+    """
     probs = F.softmax(logits, dim=1).clamp_min(1e-12)
     return -(probs * probs.log()).sum(dim=1)
 
 
 def make_dynamic_train_mask(n_nodes: int, labeled_idx: torch.Tensor, device: torch.device) -> torch.Tensor:
-    """Build a boolean train mask from given labeled indices."""
+    """    Build a boolean train mask for the current AL round."""
     mask = torch.zeros(n_nodes, dtype=torch.bool, device=device)
     if labeled_idx.numel() > 0:
         mask[labeled_idx] = True
@@ -39,12 +55,13 @@ def make_dynamic_train_mask(n_nodes: int, labeled_idx: torch.Tensor, device: tor
 
 def pick_by_entropy(entropy: torch.Tensor, candidate_idx: torch.Tensor, k: int) -> torch.Tensor:
     """Pick the top-k most uncertain nodes (by entropy) from the candidate set."""
-    ent = entropy.detach().cpu().numpy()
-    cand = candidate_idx.detach().cpu().numpy()
-    order = ent[cand].argsort()[::-1]  # descending by entropy
-    take = min(k, cand.shape[0])
-    picked = cand[order[:take]]
-    return torch.tensor(picked, dtype=torch.long, device=entropy.device)
+    # Auto-select device
+    scores = entropy[candidate_idx]
+    k = min(k, scores.numel())
+    _, topk_idx = torch.topk(scores, k, largest=True)
+    picked = candidate_idx[topk_idx]
+    return picked
+
 
 @torch.no_grad()
 def pick_umcs(
@@ -55,7 +72,19 @@ def pick_umcs(
     k: int,
     illicit_label: int = 1,
     ) -> torch.Tensor:
+    """
+    Uncertainty-based Minority Class Sampling (UMCS).
 
+    This strategy tries to correct for imbalance in the labeled set:
+    - If no points are labeled yet, it falls back to pure entropy sampling.
+    - Otherwise, it checks whether the positive (illicit) class is the
+      minority among the currently labeled nodes.
+      * If not, it falls back to entropy sampling on the pool.
+      * If yes, it first selects up to m_k points predicted as illicit
+        with lowest confidence (p_illicit close to 0.5), and then fills
+        the remaining budget via entropy sampling from the pool.
+
+    """
     device = logits.device
     probs = F.softmax(logits, dim=1).clamp_min(1e-12)
     p_illicit = probs[:, illicit_label]
@@ -68,7 +97,6 @@ def pick_umcs(
 
     y_l = y_true[labeled_idx]
     s_illicit = int((y_l == illicit_label).sum().item())
-    s_licit = s_k - s_illicit
     mu_k = s_k / 2.0
 
     minority_is_illicit = (s_illicit < mu_k)
@@ -115,23 +143,24 @@ def build_temporal_groups(
     n_groups: int,
 ) -> list[torch.Tensor]:
     """
-    מחזיר רשימה של וקטורי אינדקסים (node indices) – כל איבר הוא קבוצה רציפה בזמן.
-    הקבוצות מחלקות את טווח train_min_t..train_max_t לפי הסדר.
+    Partition the training time range into consecutive temporal groups.
+
+    The function builds `n_groups` contiguous slices in the interval
+    [train_min_t, train_max_t], and for each slice returns the node
+    indices whose `time_step` falls inside that slice.
     """
     device = timesteps.device
     n_groups = max(1, int(n_groups))
 
-    # כל הנקודות שבטווח ה-train
     in_train = (timesteps >= train_min_t) & (timesteps <= train_max_t)
     idx_train = torch.nonzero(in_train, as_tuple=True)[0]
     ts_train = timesteps[idx_train]
 
-    # טווח ה-timesteps (רק ערכי זמן, לא אינדקסים)
     uniq_ts = torch.arange(train_min_t, train_max_t + 1, device=device)
     total_ts = uniq_ts.numel()
 
     base = total_ts // n_groups
-    extra = total_ts % n_groups  # הקבוצות הראשונות יקבלו +1
+    extra = total_ts % n_groups
 
     groups: list[torch.Tensor] = []
     start = 0
@@ -142,7 +171,6 @@ def build_temporal_groups(
             continue
         ts_slice = uniq_ts[start:start + length]
         start += length
-        # כל האינדקסים ב-train שה-time_step שלהם באחת מהתתי-ערכים שב-slice
         in_group = idx_train[torch.isin(ts_train, ts_slice)]
         groups.append(in_group)
 
@@ -154,14 +182,47 @@ def run_active_learning(
         features_set: str,
         split_type: str,
         graph_mode: str,
-        seed_per_class: int = 10,
-        batch_size: int = 50,
-        budget: int = 200,
-        max_epochs_per_round: int = 100,
-        rng_seed: int = 42,
-        method: str = "entropy",
+        seed_per_class: int,
+        batch_size: int,
+        budget: int,
+        max_epochs_per_round: int,
+        rng_seed: int,
+        method: str,
 ) -> Dict:
-    """Pool-based Active Learning on the training split.
+    """
+    Run a pool-based Active Learning loop on the training split.
+
+    The procedure:
+      1. Builds an initial labeled seed set using stratified sampling
+         (seed_per_class per class from the labeled training pool).
+      2. Repeats AL rounds until the labeling budget is exhausted:
+           - Train a fresh model from scratch on the current labeled set.
+           - Evaluate it using the standard training loop (epoch_loop).
+           - Select a batch of new points from the remaining pool using
+             the chosen acquisition method (random / entropy / UMCS /
+             sequential + UMCS), and add them to the labeled set.
+      3. At the end, evaluates the final model on the test set using the
+         best validation-based threshold and returns a summary dict that
+         can be appended to an experiment table.
+
+             Parameters
+    data : Graph data with train/val/test masks, labels, and time_step.
+    model_name : Base model identifier (e.g. "GCN", "MLP", "EVOLVEGCN", "DYSAT").
+    features_set : Feature configuration ("all" or "local").
+    split_type : Train/val/test split type ("temporal" or "random").
+    graph_mode : Graph construction mode ("dag" or "undirected").
+    seed_per_class : Number of initial labeled nodes per class for the seed set.
+    batch_size : Number of new queries per AL round.
+    budget : Total number of labeled points to acquire over all rounds.
+    max_epochs_per_round : Maximum number of training epochs for each AL round.
+    rng_seed :  Random seed for reproducibility.
+    method : Acquisition strategy: "random", "entropy", "umcs" or "sequential".
+
+    Returns: dict
+        Summary of the AL run, including best validation F1, test F1,
+        AUPRC, best threshold, best/stop epoch, final LR, final number
+        of labeled points, and a per-round curve of metrics.
+
     """
     _set_all_seeds(rng_seed)
 
@@ -204,10 +265,11 @@ def run_active_learning(
     n_groups = max(1, n_rounds_total)
     temporal_groups = None
     if method == "sequential":
+        seq_cfg = AL_CFG["sequential"]
         temporal_groups = build_temporal_groups(
             timesteps=data.time_step,
-            train_min_t=1,
-            train_max_t=34,
+            train_min_t=seq_cfg["train_min_t"],
+            train_max_t=seq_cfg["train_max_t"],
             n_groups=n_groups,
         )
 
@@ -230,22 +292,20 @@ def run_active_learning(
         wd = cfg.get("weight_decay", 5e-4)
         warmup_start = cfg.get("warmup_start", 0)
         scheduler_warmup = cfg.get("scheduler_warmup", True)
-
-        # Class weights for every round (want balance)
-        def _class_weights_from_mask(y, mask, dev):
-            y_tr = y[mask]
-            counts = torch.bincount(y_tr, minlength=2).float()
-            counts[counts == 0] = 1.0
-            w = counts.sum() / (2.0 * counts)
-            return w.to(dev)
-
         optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
-        criterion = nn.CrossEntropyLoss(weight=_class_weights_from_mask(y_all, dyn_train_mask, device))
-        scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3, min_lr=0.002)
+        criterion = nn.CrossEntropyLoss(weight=compute_class_weights(y_all, dyn_train_mask, device))
+        sched_cfg = AL_CFG["scheduler"]
+        scheduler = ReduceLROnPlateau(
+            optimizer,
+            mode=sched_cfg.get("mode", "max"),
+            factor=sched_cfg.get("factor", 0.5),
+            patience=sched_cfg.get("patience", 3),
+            min_lr=sched_cfg.get("min_lr", 0.002),
+        )
 
         res = epoch_loop(
             model, data, optimizer, criterion, scheduler,
-            lr=lr, wd=wd, warmup_start=warmup_start, scheduler_warmup=scheduler_warmup, max_epochs=max_epochs_per_round
+            warmup_start=warmup_start, scheduler_warmup=scheduler_warmup, max_epochs=max_epochs_per_round
         )
         best_val_f1 = res["best_val_f1"]
         best_test_f1 = res["best_test_f1"]

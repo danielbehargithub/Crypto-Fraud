@@ -4,10 +4,12 @@
 from typing import Dict, Tuple
 import pandas as pd
 import torch
+import yaml
 from torch_geometric.data import Data
 from sklearn.model_selection import train_test_split
 from torch_geometric.utils import to_undirected, remove_self_loops, coalesce
 
+CFG = yaml.safe_load(open("configs/config_data.yaml"))
 
 # --- Constants / column names ---
 N_FEATURES_ALL = 165
@@ -72,9 +74,16 @@ def map_labels(nodes_df: pd.DataFrame) -> torch.Tensor:
 
 def make_masks_temporal(nodes_df: pd.DataFrame, y_tensor: torch.Tensor):
     """Build train/val/test masks by timesteps (temporal split)."""
-    train_steps = set(range(1, 35))   # 1..34
-    val_steps = set(range(35, 42))  # 35..41
-    test_steps = set(range(42, 50))  # 42..49
+
+    split_cfg = CFG["data"]["temporal_split"]
+
+    train_start, train_end = split_cfg["train"]
+    val_start, val_end = split_cfg["val"]
+    test_start, test_end = split_cfg["test"]
+
+    train_steps = set(range(train_start, train_end + 1))
+    val_steps = set(range(val_start, val_end + 1))
+    test_steps = set(range(test_start, test_end + 1))
 
     labeled_mask = (y_tensor >= 0)
     train_time_t = torch.tensor(nodes_df['time_step'].isin(train_steps).values, dtype=torch.bool)
@@ -125,6 +134,7 @@ def make_data(x_tensor: torch.Tensor, edge_index: torch.Tensor, y_tensor: torch.
 
 # data.py — drop-in replacement for get_variants()
 
+
 def get_variants(
     *,
     graph_modes=("dag", "undirected"),
@@ -135,8 +145,15 @@ def get_variants(
     """Return a dict keyed by (graph_mode, features_set, split_type).
     graph_mode in {"dag", "undirected"} controls whether we symmetrize edges.
     """
+    data_cfg = CFG["data"]
+
     # Load and prepare node/label tables once
-    nodes_df, edges_df, _ = load_raw()
+    nodes_df, edges_df, _ = load_raw(
+        nodes_path=data_cfg["nodes_path"],
+        edges_path=data_cfg["edges_path"],
+        labels_path=data_cfg["labels_path"],
+    )
+
     nodes_df, txid_to_idx = build_index_map(nodes_df)
     num_nodes = len(nodes_df)
 
@@ -148,8 +165,20 @@ def get_variants(
     x_local = torch.tensor(nodes_df[FEATURE_COLS_LOCAL].values, dtype=torch.float)
 
     # Masks (shared across modes)
+    rnd_cfg = CFG["data"]["random_split"]
     masks_temporal = make_masks_temporal(nodes_df, y)
-    masks_random   = make_masks_random(nodes_df, y, test_size=0.3, val_frac_of_test=0.5, seed=42)
+    masks_random = make_masks_random(
+        nodes_df,
+        y,
+        test_size=rnd_cfg["test_size"],
+        val_frac_of_test=rnd_cfg["val_frac_of_test"],
+        seed=rnd_cfg["seed"]
+    )
+
+    masks_by_split = {
+        "temporal": masks_temporal,
+        "random": masks_random,
+    }
 
     out: Dict[Tuple[str, str, str], Data] = {}
 
@@ -160,11 +189,13 @@ def get_variants(
             edges_df, txid_to_idx, num_nodes=num_nodes, make_undirected=make_undirected
         )
 
-        # Assemble 4 variants for this graph_mode
-        out[(graph_mode, 'all',   'temporal')] = make_data(x_all,   edge_index, y, masks_temporal)
-        out[(graph_mode, 'local', 'temporal')] = make_data(x_local, edge_index, y, masks_temporal)
-        out[(graph_mode, 'all',   'random')]   = make_data(x_all,   edge_index, y, masks_random)
-        out[(graph_mode, 'local', 'random')]   = make_data(x_local, edge_index, y, masks_random)
+        for feat in feature_sets:
+            x = x_all if feat == "all" else x_local
+            for split in split_types:
+                masks = masks_by_split[split]
+                key = (graph_mode, feat, split)
+                out[key] = make_data(x, edge_index, y, masks)
+
 
     # Move all to device once at the end
     if device is None:

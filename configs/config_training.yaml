@@ -1,0 +1,15 @@
+training:
+  thresholds:
+    start: 0.05
+    end: 0.95
+    num: 19
+
+  early_stopping:
+    eps: 0.002
+    patience: 10
+    max_epochs: 100
+
+  scheduler:
+    factor: 0.5
+    patience: 3
+    min_lr: 0.002
