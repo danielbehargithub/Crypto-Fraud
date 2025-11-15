@@ -5,9 +5,7 @@ models:
       dropout: 0.5
     training:
       lr: 0.02
-      weight_decay: 0.0005
-      warmup_start: 0
-      scheduler_warmup: true
+      weight_decay: 0.002
 
   MLP:
     model:
@@ -15,20 +13,16 @@ models:
       hidden2: 64
       dropout: 0.5
     training:
-      lr: 0.2
+      lr: 0.05
       weight_decay: 0.0005
-      warmup_start: 5
-      scheduler_warmup: false
 
   EVOLVEGCN:
     model:
       hidden_channels: 128
       dropout: 0.5
     training:
-      lr: 0.001
-      weight_decay: 0.0005
-      warmup_start: 10
-      scheduler_warmup: true
+      lr: 0.01
+      weight_decay: 0.001
 
   DYSAT:
     model:
@@ -38,7 +32,5 @@ models:
       temp_heads: 4
       temp_dropout: 0.1
     training:
-      lr: 0.0005
+      lr: 0.005
       weight_decay: 0.0001
-      warmup_start: 10
-      scheduler_warmup: true

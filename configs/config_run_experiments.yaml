@@ -1,12 +1,12 @@
 experiments:
 
-  run_passive: false
-  run_active:  true
+  run_passive: true
+  run_active:  false
 
   # Model / Graph combinations
-  graph_modes: ["dag"]# or undirected
-  model_names: ["MLP", "GCN"] # or EVOLVEGCN, DYSAT
-  feature_sets: ["local"] # or all
+  graph_modes: ["dag", "undirected"]# or undirected
+  model_names: ["EVOLVEGCN","GCN", "DYSAT", "MLP"] # or EVOLVEGCN, DYSAT
+  feature_sets: ["local", "all"] # or all
   split_types: ["temporal"] # or random
 
   # Active Learning Methods
@@ -26,6 +26,6 @@ experiments:
 
   # Output Settings
   output:
-    passive_summary_csv: "results/summary_passive.csv"
-    active_summary_csv:  "results/summary_active.csv"
+    passive_summary_csv: "results/run_summary_passive.csv"
+    active_summary_csv:  "results/run_summary_active.csv"
     active_curves_csv:   "results/run_curves.csv"
