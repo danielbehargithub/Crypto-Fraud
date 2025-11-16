@@ -17,9 +17,9 @@ al_methods:
 # Active Learning Hyperparameters
 al_params:
   seed_per_class: 10
-  batch_size: 10
-  budget: 20
-  max_epochs_per_round: 2
+  batch_size: 100
+  budget: 1000
+  max_epochs_per_round: 20
   rng_seed: 42
 
 

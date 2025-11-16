@@ -1,13 +1,71 @@
 active_learning:
 
-  # Scheduler hyperparameters
-  scheduler:
-    mode: "max"
-    factor: 0.5
-    patience: 3
-    min_lr: 0.002
-
   # Sequential temporal grouping
   sequential:
     train_min_t: 1            # first train time step (inclusive)
     train_max_t: 34           # last  train time step (inclusive)
+
+  training_params:
+    MLP:
+      local:
+        dag:
+          max_epochs: 200 / 10
+          patience: 60 / 10
+        undirected:
+          max_epochs: 200 / 10
+          patience: 60 / 10
+      all:
+        dag:
+          max_epochs: 200 / 5
+          patience: 60 / 5
+        undirected:
+          max_epochs: 200 / 5
+          patience: 60 / 5
+
+    GCN:
+      local:
+        dag:
+          max_epochs: 150 // 5
+          patience: 45 // 5
+        undirected:
+          max_epochs: 150 // 5
+          patience: 45 // 5
+      all:
+        dag:
+          max_epochs: 150 // 5
+          patience: 45 // 5
+        undirected:
+          max_epochs: 150 // 5
+          patience: 45 // 5
+
+    EVOLVEGCN:
+      local:
+        dag:
+          max_epochs: 35 // 5
+          patience: 10 // 5
+        undirected:
+          max_epochs: 29 // 5
+          patience: 8 // 5
+      all:
+        dag:
+          max_epochs: 26 // 5
+          patience: 7 // 5
+        undirected:
+          max_epochs: 20 // 5
+          patience: 6 // 5
+
+    DYSAT:
+      local:
+        dag:
+          max_epochs: 18 // 5
+          patience: 5 // 5
+        undirected:
+          max_epochs: 14 // 5
+          patience: 5  // 5
+      all:
+        dag:
+          max_epochs: 18 // 5
+          patience: 5 // 5
+        undirected:
+          max_epochs: 13 // 5
+          patience: 5 // 5

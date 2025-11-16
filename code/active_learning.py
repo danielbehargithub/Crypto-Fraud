@@ -13,6 +13,7 @@ import numpy as np
 import yaml
 
 AL_CFG = yaml.safe_load(open("configs/config_active_learning.yaml"))["active_learning"]
+AL_TRAINING_PARAMS = AL_CFG.get("training_params", {})
 
 
 def _set_all_seeds(seed: int):
@@ -229,6 +230,18 @@ def run_active_learning(
     tag = f"{model_name.upper()} | {features_set.upper()} | {split_type.upper()} | {graph_mode.upper()} | {method.upper()}"
     print(f"\n===== RUN (Active Learning): {tag}\n")
 
+
+    model_key = model_name.upper()
+    fset_key = features_set.lower()
+    gmode_key = graph_mode.lower()
+
+    cfg_al_train = AL_TRAINING_PARAMS.get(model_key, {})
+    cfg_al_train = cfg_al_train.get(fset_key, {})
+    cfg_al_train = cfg_al_train.get(gmode_key, {})
+
+    max_epochs_per_round = cfg_al_train.get("max_epochs_per_round")
+    patience = cfg_al_train.get("patience", None)
+
     device = data.x.device
     y_all = data.y
     n_nodes = y_all.size(0)
@@ -294,18 +307,20 @@ def run_active_learning(
         optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
         criterion = nn.CrossEntropyLoss(weight=compute_class_weights(y_all, dyn_train_mask, device))
 
-        sched_cfg = AL_CFG["scheduler"]
+        sched_patience = max(2, patience // 4)
+        min_lr = max(lr * 0.1, 1e-5)
+
         scheduler = ReduceLROnPlateau(
             optimizer,
-            mode=sched_cfg.get("mode", "max"),
-            factor=sched_cfg.get("factor", 0.5),
-            patience=sched_cfg.get("patience", 3),
-            min_lr=sched_cfg.get("min_lr", 0.002),
+            mode="max",
+            factor=0.5,
+            patience=sched_patience,
+            min_lr=min_lr,
         )
 
         res = epoch_loop(
             model, data, optimizer, criterion, scheduler,
-            max_epochs=max_epochs_per_round
+            max_epochs=max_epochs_per_round, patience=patience,
         )
         best_val_f1 = res["best_val_f1"]
         best_test_f1 = res["best_test_f1"]
