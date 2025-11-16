@@ -269,10 +269,12 @@ class DySAT(nn.Module):
             seq, pad = self._build_sequences(node_idx, h_t)  # pad: [N_t, L]
 
             # Work around potential issues on some platforms by running attention on CPU
-            seq_cpu = seq.detach().cpu().to(torch.float32).contiguous()
-            pad_cpu = pad.detach().to(torch.bool).cpu()
-            z_t_cpu = self.temporal(seq_cpu, key_padding_mask=pad_cpu)  # [N_t, D] on CPU
-            z_t = z_t_cpu.to(h_t.device)
+            # seq_cpu = seq.detach().cpu().to(torch.float32).contiguous()
+            # pad_cpu = pad.detach().to(torch.bool).cpu()
+            # z_t_cpu = self.temporal(seq_cpu, key_padding_mask=pad_cpu)  # [N_t, D] on CPU
+            # z_t = z_t_cpu.to(h_t.device)
+
+            z_t = self.temporal(seq, key_padding_mask=pad)
 
             logits_t = self.classifier(z_t)
             logits_full[node_idx] = logits_t
