@@ -7,8 +7,10 @@ import numpy as np
 import torch.nn.functional as F
 import yaml
 import time
+from pathlib import Path
 
-CFG = yaml.safe_load(open("configs/config_training.yaml"))
+ROOT = Path(__file__).resolve().parent.parent
+CFG = yaml.safe_load(open(ROOT / "configs" / "config_training.yaml"))
 TRAINING_PARAMS = CFG.get("training_params", {})
 
 def compute_class_weights(y, mask, device):

@@ -8,8 +8,10 @@ import yaml
 from torch_geometric.data import Data
 from sklearn.model_selection import train_test_split
 from torch_geometric.utils import to_undirected, remove_self_loops, coalesce
+from pathlib import Path
 
-CFG = yaml.safe_load(open("configs/config_data.yaml"))
+ROOT = Path(__file__).resolve().parent.parent
+CFG = yaml.safe_load(open(ROOT / "configs"/ "config_data.yaml"))
 
 # --- Constants / column names ---
 N_FEATURES_ALL = 165

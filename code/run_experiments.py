@@ -4,8 +4,10 @@ from data import get_variants
 from active_learning import run_active_learning
 from training import run
 import yaml
+from pathlib import Path
 
-ECFG = yaml.safe_load(open("configs/config_run_experiments.yaml"))
+ROOT = Path(__file__).resolve().parent.parent
+ECFG = yaml.safe_load(open(ROOT / "configs" / "config_run_experiments.yaml"))
 
 def run_experiments(
     run_type: str,

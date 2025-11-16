@@ -4,12 +4,15 @@ import torch.nn.functional as F
 from typing import List, Dict
 from collections import deque
 import yaml
+from pathlib import Path
+
 
 from torch_geometric.utils import add_self_loops, subgraph, to_undirected
 from torch_geometric_temporal.nn.recurrent import EvolveGCNO
 from torch_geometric.nn import GATConv, GCNConv
 
-CFG = yaml.safe_load(open("configs/config_models.yaml"))
+ROOT = Path(__file__).resolve().parent.parent
+CFG = yaml.safe_load(open(ROOT / "configs" /"config_models.yaml"))
 
 class MLP(nn.Module):
     """Baseline: simple 3-layer MLP for node classification (ignores edges)."""

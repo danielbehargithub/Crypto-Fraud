@@ -11,8 +11,10 @@ from training import _forward, epoch_loop, predict_with_threshold, compute_class
 import os, random
 import numpy as np
 import yaml
+from pathlib import Path
 
-AL_CFG = yaml.safe_load(open("configs/config_active_learning.yaml"))["active_learning"]
+ROOT = Path(__file__).resolve().parent.parent
+AL_CFG = yaml.safe_load(open(ROOT / "configs" / "config_active_learning.yaml"))["active_learning"]
 AL_TRAINING_PARAMS = AL_CFG.get("training_params", {})
 
 

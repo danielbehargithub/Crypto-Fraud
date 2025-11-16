@@ -7,15 +7,15 @@ from typing import Dict, Optional, Tuple, List
 import yaml
 from pathlib import Path
 
-
-CFG_VIS = yaml.safe_load(open("configs/config_visual.yaml"))
+ROOT = Path(__file__).resolve().parent.parent
+CFG_VIS = yaml.safe_load(open(ROOT / "configs" / "config_visual.yaml"))
 CFG_VIS = CFG_VIS["visual"]
 
-DATASET_DIR = Path(CFG_VIS["dataset_dir"])
-RESULTS_DIR = Path(CFG_VIS["results_dir"])
-VIS_DIR = Path(CFG_VIS["vis_dir"])
+DATASET_DIR = ROOT / CFG_VIS["dataset_dir"]
+RESULTS_DIR = ROOT / CFG_VIS["results_dir"]
+VIS_DIR     = ROOT / CFG_VIS["vis_dir"]
 
-AL_VIS_DIR = VIS_DIR / CFG_VIS.get("al_vis_subdir", "AL_visualizations")
+AL_VIS_DIR   = VIS_DIR / CFG_VIS.get("al_vis_subdir", "AL_visualizations")
 AL_PLOTS_DIR = AL_VIS_DIR / CFG_VIS.get("al_plots_subdir", "plots")
 AL_RATIO_DIR = AL_VIS_DIR / CFG_VIS.get("al_ratio_subdir", "illicit_ratio")
 
