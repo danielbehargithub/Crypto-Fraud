@@ -9,63 +9,63 @@ training_params:
   MLP:
     local:
       dag:
-        max_epochs: 200
-        patience: 60
+        max_epochs: 170
+        patience: 15
       undirected:
-        max_epochs: 200
-        patience: 60
+        max_epochs: 170
+        patience: 15
     all:
       dag:
-        max_epochs: 200
-        patience: 60
+        max_epochs: 170
+        patience: 15
       undirected:
-        max_epochs: 200
-        patience: 60
+        max_epochs: 170
+        patience: 15
 
   GCN:
     local:
       dag:
-        max_epochs: 150
-        patience: 45
+        max_epochs: 170
+        patience: 15
       undirected:
-        max_epochs: 150
-        patience: 45
+        max_epochs: 170
+        patience: 15
     all:
       dag:
-        max_epochs: 150
-        patience: 45
+        max_epochs: 170
+        patience: 15
       undirected:
-        max_epochs: 150
-        patience: 45
+        max_epochs: 170
+        patience: 15
 
   EVOLVEGCN:
     local:
       dag:
-        max_epochs: 35
-        patience: 10
+        max_epochs: 170
+        patience: 15
       undirected:
-        max_epochs: 29
-        patience: 8
+        max_epochs: 170
+        patience: 15
     all:
       dag:
-        max_epochs: 26
-        patience: 7
+        max_epochs: 170
+        patience: 15
       undirected:
-        max_epochs: 20
-        patience: 6
+        max_epochs: 170
+        patience: 15
 
   DYSAT:
     local:
       dag:
-        max_epochs: 18
-        patience: 5
+        max_epochs: 170
+        patience: 15
       undirected:
-        max_epochs: 14
-        patience: 5
+        max_epochs: 170
+        patience: 15
     all:
       dag:
-        max_epochs: 18
-        patience: 5
+        max_epochs: 170
+        patience: 15
       undirected:
-        max_epochs: 13
-        patience: 5
+        max_epochs: 170
+        patience: 15

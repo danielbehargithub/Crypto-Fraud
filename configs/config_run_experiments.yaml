@@ -1,5 +1,5 @@
-run_passive: false
-run_active:  true
+run_passive: true
+run_active:  false
 
 # Model / Graph combinations
 graph_modes: ["dag", "undirected"]# or undirected

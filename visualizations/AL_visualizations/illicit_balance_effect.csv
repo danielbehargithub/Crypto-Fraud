@@ -1,9 +1,9 @@
 model,method,n_points,corr_partial
-AL-GCN,entropy,3,1.0
-AL-GCN,random,3,0.5
-AL-GCN,sequential,3,-1.0
-AL-GCN,umcs,3,-1.0
-AL-MLP,entropy,3,1.0
-AL-MLP,random,3,0.5
-AL-MLP,sequential,3,-1.0
-AL-MLP,umcs,3,1.0
+AL-GCN,entropy,11,-0.284
+AL-GCN,random,11,0.668
+AL-GCN,sequential,11,0.35
+AL-GCN,umcs,11,-0.121
+AL-MLP,entropy,11,-0.281
+AL-MLP,random,11,0.515
+AL-MLP,sequential,11,-0.604
+AL-MLP,umcs,11,-0.262

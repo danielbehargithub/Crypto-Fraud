@@ -317,7 +317,7 @@ def epoch_loop(model, data, optimizer, criterion, scheduler,
             # Save model state (standard practice)
             best_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             no_improve = 0
-            print(f"Improved at epoch: {epoch:03d}, Loss: {loss:.4f}, Val F1: {val_f1:.4f}, ")
+            # print(f"Improved at epoch: {epoch:03d}, Loss: {loss:.4f}, Val F1: {val_f1:.4f}, ")
         else:
             no_improve += 1
             if no_improve >= patience:
@@ -334,10 +334,11 @@ def epoch_loop(model, data, optimizer, criterion, scheduler,
         ep_end = time.perf_counter()
         epoch_times.append(ep_end - ep_start)
 
-        print(
-            f"Epoch: {epoch:03d}, Loss: {loss:.4f}, Val F1: {val_f1:.4f}, "
-            f"Test F1: {best_test_f1:.4f}, Epoch time: {epoch_times[-1]:.2f}s"
-        )
+        if epoch % 5 == 0:
+            print(
+                f"Epoch: {epoch:03d}, Loss: {loss:.4f}, Val F1: {val_f1:.4f}, "
+                f"Test F1: {best_test_f1:.4f}, Epoch time: {epoch_times[-1]:.2f}s"
+            )
 
     total_time = time.perf_counter() - loop_start
     mean_epoch_time = float(np.mean(epoch_times)) if epoch_times else 0.0

@@ -1,9 +1,9 @@
 model,method,features_set,split_type,graph_mode,in_channels,best_val_f1,test_f1,auprc,best_threshold,best_epoch,stop_epoch,final_lr,final_labeled,total_time_sec,mean_epoch_time_sec
-AL-MLP,random,local,temporal,dag,94,0.5373,0.2747,0.1278,0.8,1,1,0.05,40,3.54,0.59
-AL-MLP,sequential,local,temporal,dag,94,0.475,0.1951,0.0752,0.1,0,1,0.05,40,3.6,0.6
-AL-GCN,entropy,local,temporal,dag,94,0.4065,0.1898,0.1095,0.8,1,1,0.02,40,2.13,0.35
-AL-GCN,sequential,local,temporal,dag,94,0.3737,0.1877,0.114,0.8,1,1,0.02,40,2.19,0.36
-AL-GCN,umcs,local,temporal,dag,94,0.3985,0.1869,0.1097,0.75,1,1,0.02,40,2.21,0.37
-AL-GCN,random,local,temporal,dag,94,0.3492,0.174,0.0971,0.7,1,1,0.02,40,2.2,0.37
-AL-MLP,entropy,local,temporal,dag,94,0.3949,0.1622,0.0598,0.1,0,1,0.05,40,3.52,0.59
-AL-MLP,umcs,local,temporal,dag,94,0.3949,0.1622,0.0598,0.1,0,1,0.05,40,3.43,0.57
+AL-MLP,entropy,local,temporal,dag,94,0.8443,0.5637,0.4609,0.45,6,12,0.025,1020,96.41,0.62
+AL-MLP,random,local,temporal,dag,94,0.8528,0.563,0.4488,0.95,21,27,0.025,1020,104.49,0.54
+AL-MLP,sequential,local,temporal,dag,94,0.8587,0.5268,0.4816,0.5,19,25,0.0125,1020,94.9,0.61
+AL-MLP,umcs,local,temporal,dag,94,0.7788,0.4596,0.2922,0.1,0,6,0.025,1020,84.28,0.55
+AL-GCN,umcs,local,temporal,dag,94,0.4928,0.2863,0.1454,0.55,12,20,0.0025,1020,79.63,0.41
+AL-GCN,sequential,local,temporal,dag,94,0.5535,0.2596,0.1411,0.6,12,20,0.0025,1020,80.73,0.38
+AL-GCN,random,local,temporal,dag,94,0.4422,0.2364,0.1376,0.9,4,12,0.005,1020,133.08,0.38
+AL-GCN,entropy,local,temporal,dag,94,0.4063,0.2304,0.1039,0.45,5,13,0.005,1020,65.94,0.34

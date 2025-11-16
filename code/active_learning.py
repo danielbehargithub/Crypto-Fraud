@@ -246,25 +246,46 @@ def run_active_learning(
     y_all = data.y
     n_nodes = y_all.size(0)
 
+    rng = torch.Generator(device='cpu').manual_seed(rng_seed)
+
     # Candidate pool = labeled nodes inside original train split
     full_train_idx = torch.nonzero(data.train_mask, as_tuple=True)[0]
     labeled_filter = (y_all >= 0)
     pool_idx = full_train_idx[labeled_filter[full_train_idx]]
 
     # Stratified seed: pick seed_per_class per class from pool (if possible)
-    rng = torch.Generator(device='cpu').manual_seed(rng_seed)
+
+    pool_labels = y_all[pool_idx]
+    classes, counts = torch.unique(pool_labels, return_counts=True)
+
+    valid_mask = classes >= 0
+    classes = classes[valid_mask]
+    counts = counts[valid_mask]
+
+    n_classes = classes.numel()
+    total_seed = seed_per_class * n_classes
+    probs = counts.float() / counts.sum()
+    desired_per_class = (probs * total_seed).round().long()
+    desired_per_class = torch.clamp(desired_per_class, min=1)
+
     labeled_idx_list: List[torch.Tensor] = []
-    for cls in torch.unique(y_all[pool_idx]):
-        if cls.item() < 0:
-            continue
-        cls_idx = pool_idx[(y_all[pool_idx] == cls)]
+
+    for cls, k in zip(classes, desired_per_class):
+        cls = cls.item()
+        k = int(k.item())
+
+        cls_idx = pool_idx[(pool_labels == cls)]
         if cls_idx.numel() == 0:
             continue
-        k = min(seed_per_class, cls_idx.numel())
-        choice = cls_idx[torch.randperm(cls_idx.numel(), generator=rng)[:k]]
+
+        k = min(k, cls_idx.numel())
+        if k <= 0:
+            continue
+
+        perm = torch.randperm(cls_idx.numel(), generator=rng)
+        choice = cls_idx[perm[:k]]
         labeled_idx_list.append(choice)
-    if len(labeled_idx_list) == 0:
-        raise RuntimeError("No labeled seeds available in the training pool.")
+
     labeled_idx = torch.unique(torch.cat(labeled_idx_list)).to(device)
 
     remaining_pool = pool_idx[~torch.isin(pool_idx, labeled_idx)]

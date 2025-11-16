@@ -7,7 +7,9 @@ from typing import Dict, Optional, Tuple, List
 import yaml
 from pathlib import Path
 
-CFG_VIS = yaml.safe_load(open("configs/config_visual.yaml", "r"))["visual"]
+
+CFG_VIS = yaml.safe_load(open("configs/config_visual.yaml"))
+CFG_VIS = CFG_VIS["visual"]
 
 DATASET_DIR = Path(CFG_VIS["dataset_dir"])
 RESULTS_DIR = Path(CFG_VIS["results_dir"])
