@@ -3,7 +3,7 @@ run_active:  false
 
 # Model / Graph combinations
 graph_modes: ["dag", "undirected"]# or undirected
-model_names: ["GCN", "MLP"] # or EVOLVEGCN, DYSAT
+model_names: ["GCN", "MLP", "DYSAT", "EVOLVEGCN"] # or EVOLVEGCN, DYSAT
 feature_sets: ["local", "all"] # or all
 split_types: ["temporal"] # or random
 
