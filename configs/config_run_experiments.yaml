@@ -1,31 +1,53 @@
-experiments:
+run_passive: false
+run_active:  true
 
-  run_passive: true
-  run_active:  false
+# Model / Graph combinations
+graph_modes: ["dag", "undirected"]# or undirected
+model_names: ["GCN", "MLP"] # or EVOLVEGCN, DYSAT
+feature_sets: ["local", "all"] # or all
+split_types: ["temporal"] # or random
 
-  # Model / Graph combinations
-  graph_modes: ["dag", "undirected"]# or undirected
-  model_names: ["EVOLVEGCN","GCN", "DYSAT", "MLP"] # or EVOLVEGCN, DYSAT
-  feature_sets: ["local", "all"] # or all
-  split_types: ["temporal"] # or random
+# Active Learning Methods
+al_methods:
+  - "entropy"
+  - "random"
+  - "umcs"
+  - "sequential"
 
-  # Active Learning Methods
-  al_methods:
-    - "entropy"
-    - "random"
-    - "umcs"
-    - "sequential"
+# Active Learning Hyperparameters
+al_params:
+  seed_per_class: 10
+  batch_size: 10
+  budget: 20
+  max_epochs_per_round: 2
+  rng_seed: 42
 
-  # Active Learning Hyperparameters
-  al_params:
-    seed_per_class: 10
-    batch_size: 20
-    budget: 200
-    max_epochs_per_round: 20
-    rng_seed: 42
 
-  # Output Settings
-  output:
-    passive_summary_csv: "results/run_summary_passive.csv"
-    active_summary_csv:  "results/run_summary_active.csv"
-    active_curves_csv:   "results/run_curves.csv"
+# AL varients
+
+model_variants:
+  EVOLVEGCN:
+    - graph_mode: "dag"
+      features_set: "local"
+      split_type: "temporal"
+
+  DYSAT:
+    - graph_mode: "dag"
+      features_set: "local"
+      split_type: "temporal"
+
+  GCN:
+    - graph_mode: "dag"
+      features_set: "local"
+      split_type: "temporal"
+
+  MLP:
+    - graph_mode: "dag"
+      features_set: "local"
+      split_type: "temporal"
+
+# Output Settings
+output:
+  passive_summary_csv: "results/run_summary_passive.csv"
+  active_summary_csv:  "results/run_summary_active.csv"
+  active_curves_csv:   "results/run_curves.csv"

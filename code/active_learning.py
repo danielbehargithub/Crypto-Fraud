@@ -272,7 +272,8 @@ def run_active_learning(
             train_max_t=seq_cfg["train_max_t"],
             n_groups=n_groups,
         )
-
+    total_time = 0
+    total_epochs = 0
     while total_acquired <= budget and remaining_pool.numel() > 0:
         round_id += 1
         # print(f"[AL-Round {round_id}]")
@@ -290,10 +291,9 @@ def run_active_learning(
 
         lr = cfg.get("lr", 2e-2)
         wd = cfg.get("weight_decay", 5e-4)
-        warmup_start = cfg.get("warmup_start", 0)
-        scheduler_warmup = cfg.get("scheduler_warmup", True)
         optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
         criterion = nn.CrossEntropyLoss(weight=compute_class_weights(y_all, dyn_train_mask, device))
+
         sched_cfg = AL_CFG["scheduler"]
         scheduler = ReduceLROnPlateau(
             optimizer,
@@ -305,7 +305,7 @@ def run_active_learning(
 
         res = epoch_loop(
             model, data, optimizer, criterion, scheduler,
-            warmup_start=warmup_start, scheduler_warmup=scheduler_warmup, max_epochs=max_epochs_per_round
+            max_epochs=max_epochs_per_round
         )
         best_val_f1 = res["best_val_f1"]
         best_test_f1 = res["best_test_f1"]
@@ -314,6 +314,11 @@ def run_active_learning(
         best_epoch = res["best_epoch"]
         stop_epoch = res["stop_epoch"]
         final_lr = res["final_lr"]
+        total_time_round = res.get("total_time_sec", None)
+        mean_epoch_time_round = res.get("mean_epoch_time_sec", None)
+
+        total_time += total_time_round
+        total_epochs += (stop_epoch + 1)
 
         curve.append({
             "round": round_id,
@@ -327,6 +332,8 @@ def run_active_learning(
             "stop_epoch": stop_epoch,
             "final_lr": final_lr,
             "best_threshold": best_t,
+            "total_time_sec": total_time_round,
+            "mean_epoch_time_sec": mean_epoch_time_round,
         })
 
         print(
@@ -396,6 +403,8 @@ def run_active_learning(
     print(f"\n[{tag}] Classification Report on Test Set (threshold={best_t:.2f}):")
     print(classification_report(test_true, test_pred, target_names=['Licit', 'Illicit']))
 
+    mean_epoch_time_total = total_time / total_epochs if total_epochs > 0 else 0
+
     return {
         "model": f"AL-{model_name.upper()}",
         "method": method,
@@ -411,5 +420,7 @@ def run_active_learning(
         "stop_epoch": stop_epoch,
         "final_lr": final_lr,
         "final_labeled": int(labeled_idx.numel()),
+        "total_time_sec": round(float(total_time), 2),
+        "mean_epoch_time_sec": round(float(mean_epoch_time_total), 2),
         "curve": curve,
     }

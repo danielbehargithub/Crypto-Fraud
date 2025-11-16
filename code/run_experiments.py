@@ -5,8 +5,7 @@ from active_learning import run_active_learning
 from training import run
 import yaml
 
-CFG = yaml.safe_load(open("configs/config_run_experiments.yaml"))
-ECFG = CFG["experiments"]
+ECFG = yaml.safe_load(open("configs/config_run_experiments.yaml"))
 
 def run_experiments(
     run_type: str,
@@ -44,32 +43,39 @@ def run_experiments(
     """
     al_cfg = ECFG["al_params"]
     rows = []
-    for gm in graph_modes:
+    if run_type == "passive":
         for model_name in model_names:
-            for fset in feature_sets:
-                for split in split_types:
-                    data_obj = data_variants[(gm, fset, split)]
-
-                    if run_type == "passive":
+            for gm in graph_modes:
+                for fset in feature_sets:
+                    for split in split_types:
+                        data_obj = data_variants[(gm, fset, split)]
                         row = run(data_obj, model_name, fset, split, gm)
                         rows.append(row)
-                    elif run_type == "active":
-                        for method in al_methods:
-                            data_copy = copy.deepcopy(data_obj)
-                            row = run_active_learning(
-                                data=data_copy,
-                                model_name=model_name,
-                                features_set=fset,
-                                split_type=split,
-                                graph_mode=gm,
-                                seed_per_class=al_cfg["seed_per_class"],
-                                batch_size=al_cfg["batch_size"],
-                                budget=al_cfg["budget"],
-                                max_epochs_per_round=al_cfg["max_epochs_per_round"],
-                                rng_seed=al_cfg["rng_seed"],
-                                method=method,
-                            )
-                            rows.append(row)
+    elif run_type == "active":
+        model_variants_cfg = ECFG.get("model_variants", {})
+        for model_name in model_names:
+            mv = model_variants_cfg.get(model_name.upper(), {})
+            mv = mv[0]
+            chosen_gm   = mv["graph_mode"]
+            chosen_fset = mv["features_set"]
+            chosen_split = mv["split_type"]
+            data_obj = data_variants[(chosen_gm, chosen_fset, chosen_split)]
+            for method in al_methods:
+                data_copy = copy.deepcopy(data_obj)
+                row = run_active_learning(
+                    data=data_copy,
+                    model_name=model_name,
+                    features_set=chosen_fset,
+                    split_type=chosen_split,
+                    graph_mode=chosen_gm,
+                    seed_per_class=al_cfg["seed_per_class"],
+                    batch_size=al_cfg["batch_size"],
+                    budget=al_cfg["budget"],
+                    max_epochs_per_round=al_cfg["max_epochs_per_round"],
+                    rng_seed=al_cfg["rng_seed"],
+                    method=method,
+                )
+                rows.append(row)
     return pd.DataFrame(rows)
 
 
