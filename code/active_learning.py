@@ -67,7 +67,7 @@ def pick_by_entropy(entropy: torch.Tensor, candidate_idx: torch.Tensor, k: int) 
 
 
 @torch.no_grad()
-def pick_umcs(
+def pick_cmcs(
     logits: torch.Tensor,
     remaining_pool: torch.Tensor,
     labeled_idx: torch.Tensor,
@@ -76,7 +76,7 @@ def pick_umcs(
     illicit_label: int = 1,
     ) -> torch.Tensor:
     """
-    Uncertainty-based Minority Class Sampling (UMCS).
+    Cncertainty-based Minority Class Sampling (CMCS).
 
     This strategy tries to correct for imbalance in the labeled set:
     - If no points are labeled yet, it falls back to pure entropy sampling.
@@ -84,7 +84,7 @@ def pick_umcs(
       minority among the currently labeled nodes.
       * If not, it falls back to entropy sampling on the pool.
       * If yes, it first selects up to m_k points predicted as illicit
-        with lowest confidence (p_illicit close to 0.5), and then fills
+        with highest confidence (p_illicit close to 0.5), and then fills
         the remaining budget via entropy sampling from the pool.
 
     """
@@ -117,7 +117,7 @@ def pick_umcs(
 
     if m_k > 0 and cand_idx.numel() > 0:
         take = min(m_k, cand_idx.numel())
-        order = torch.argsort(p_illicit[cand_idx], descending=False)  # קטן->גדול
+        order = torch.argsort(p_illicit[cand_idx], descending=True)
         chosen_illicit = cand_idx[order[:take]]
         picked_list.append(chosen_illicit)
 
@@ -202,8 +202,8 @@ def run_active_learning(
            - Train a fresh model from scratch on the current labeled set.
            - Evaluate it using the standard training loop (epoch_loop).
            - Select a batch of new points from the remaining pool using
-             the chosen acquisition method (random / entropy / UMCS /
-             sequential + UMCS), and add them to the labeled set.
+             the chosen acquisition method (random / entropy / cmcs /
+             sequential + cmcs), and add them to the labeled set.
       3. At the end, evaluates the final model on the test set using the
          best validation-based threshold and returns a summary dict that
          can be appended to an experiment table.
@@ -219,7 +219,7 @@ def run_active_learning(
     budget : Total number of labeled points to acquire over all rounds.
     max_epochs_per_round : Maximum number of training epochs for each AL round.
     rng_seed :  Random seed for reproducibility.
-    method : Acquisition strategy: "random", "entropy", "umcs" or "sequential".
+    method : Acquisition strategy: "random", "entropy", "cmcs" or "sequential".
 
     Returns: dict
         Summary of the AL run, including best validation F1, test F1,
@@ -394,8 +394,8 @@ def run_active_learning(
                 entropy = compute_entropy(logits)
                 picked = pick_by_entropy(entropy, remaining_pool, k)
 
-            elif method == "umcs":
-                picked = pick_umcs(
+            elif method == "cmcs":
+                picked = pick_cmcs(
                     logits=logits,
                     remaining_pool=remaining_pool,
                     labeled_idx=torch.sort(labeled_idx).values,
@@ -408,7 +408,7 @@ def run_active_learning(
                 group_idx = temporal_groups[curr_gid]
                 pool_mask = torch.isin(remaining_pool, group_idx)
                 pool_group = remaining_pool[pool_mask]
-                picked_group = pick_umcs(
+                picked_group = pick_cmcs(
                     logits=logits,
                     remaining_pool=pool_group,
                     labeled_idx=torch.sort(labeled_idx).values,

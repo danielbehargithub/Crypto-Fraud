@@ -11,7 +11,7 @@ split_types: ["temporal"] # or random
 al_methods:
   - "entropy"
   - "random"
-  - "umcs"
+  - "cmcs"
   - "sequential"
 
 # Active Learning Hyperparameters

@@ -34,7 +34,7 @@ def run_experiments(
     feature_sets : Feature configurations, e.g. ["local"], ["local", "all"].
     split_types : Train/val/test split strategies, e.g. ["temporal"], ["temporal", "random"].
     al_methods : List of acquisition strategies for Active Learning runs
-        (e.g. ["entropy", "random", "umcs", "sequential"]).
+        (e.g. ["entropy", "random", "cmcs", "sequential"]).
         Only used when run_type == "active".
 
     Returns

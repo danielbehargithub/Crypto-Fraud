@@ -523,7 +523,7 @@ def run_all_visualizations():
     compute_leaderboard(
         csv_path=active_csv,
         metric="test_f1",
-        group_col="model",
+        group_col="method",
         output_path=AL_VIS_DIR / FILES["leaderboard_active"],
     )
 
