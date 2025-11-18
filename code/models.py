@@ -1,3 +1,8 @@
+import os
+
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8" 
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,8 +10,9 @@ from typing import List, Dict
 from collections import deque
 import yaml
 from pathlib import Path
-
-
+import math
+from torch import Tensor
+from torch_geometric.utils import subgraph
 from torch_geometric.utils import add_self_loops, subgraph, to_undirected
 from torch_geometric_temporal.nn.recurrent import EvolveGCNO
 from torch_geometric.nn import GATConv, GCNConv
@@ -61,69 +67,243 @@ class GCN(torch.nn.Module):
         return x  # logits
 
 
-class EvolveGCN(nn.Module):
-    """Wrapper around EvolveGCN-O with a GCN-like interface.
-    The model supports two modes:
-    - Static: forward(x, edge_index, time_step=None) runs a single step over the whole graph.
-    - Temporal: forward(x, edge_index, time_step) builds cumulative subgraphs per time step
-      and applies the recurrent GCN over time.
+# ====== GRCU / mat-GRU as in EvolveGCN-O (slightly adapted) ======
+
+
+class MatGRUGate(nn.Module):
+    def __init__(self, rows: int, cols: int, activation: nn.Module):
+        super().__init__()
+        self.activation = activation
+
+        # As in egcn_o: W, U have shape [rows, rows], bias has shape [rows, cols]
+        self.W = nn.Parameter(torch.Tensor(rows, rows))
+        self.U = nn.Parameter(torch.Tensor(rows, rows))
+        self.bias = nn.Parameter(torch.zeros(rows, cols))
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        stdv = 1.0 / math.sqrt(self.W.size(1))
+        self.W.data.uniform_(-stdv, stdv)
+        self.U.data.uniform_(-stdv, stdv)
+        # bias is already initialized to zeros
+
+    def forward(self, x: Tensor, hidden: Tensor) -> Tensor:
+        # x, hidden: [rows, cols]
+        out = self.activation(self.W @ x + self.U @ hidden + self.bias)
+        return out
+
+
+class MatGRUCell(nn.Module):
+    """Evolves the GCN weight matrix Q_t over time.
+
+    This is almost identical to mat_GRU_cell in egcn_o.py, but without TopK
+    (we simply use prev_Q directly).
     """
+
+    def __init__(self, in_feats: int, out_feats: int):
+        super().__init__()
+        self.update = MatGRUGate(in_feats, out_feats, activation=nn.Sigmoid())
+        self.reset_gate = MatGRUGate(in_feats, out_feats, activation=nn.Sigmoid())
+        self.htilda = MatGRUGate(in_feats, out_feats, activation=nn.Tanh())
+
+    def forward(self, prev_Q: Tensor) -> Tensor:
+        # In the original egcn_o they optionally apply TopK on embeddings,
+        # but in the file you provided this is disabled and they just use prev_Q.
+        z_topk = prev_Q
+
+        update = self.update(z_topk, prev_Q)
+        reset = self.reset_gate(z_topk, prev_Q)
+
+        h_cap = reset * prev_Q
+        h_cap = self.htilda(z_topk, h_cap)
+
+        new_Q = (1.0 - update) * prev_Q + update * h_cap
+        return new_Q
+
+
+class GRCU(nn.Module):
+    """
+    Gated Recurrent Convolution Unit.
+
+    At each time step t:
+      1. Evolve a new GCN weight matrix Q_t through MatGRUCell.
+      2. Apply a GCN-style update: H_t = σ(Â_t X_t Q_t).
+    """
+
+    def __init__(self, in_feats: int, out_feats: int, activation=F.relu):
+        super().__init__()
+        self.in_feats = in_feats
+        self.out_feats = out_feats
+        self.activation = activation
+
+        self.evolve_weights = MatGRUCell(in_feats, out_feats)
+        self.GCN_init_weights = nn.Parameter(torch.Tensor(in_feats, out_feats))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        stdv = 1.0 / math.sqrt(self.GCN_init_weights.size(1))
+        self.GCN_init_weights.data.uniform_(-stdv, stdv)
+
+    def forward(self, A_list: List[Tensor], X_list: List[Tensor]) -> List[Tensor]:
+        """
+        Parameters
+        ----------
+        A_list : list of Tensors
+            Each element is a [N_t, N_t] normalized adjacency matrix Â_t.
+        X_list : list of Tensors
+            Each element is a [N_t, in_feats] node feature matrix X_t.
+
+        Returns
+        -------
+        out_seq : list of Tensors
+            Each element is H_t of shape [N_t, out_feats] for each time step t.
+        """
+        Q = self.GCN_init_weights  # initial GCN weight matrix
+        out_seq: List[Tensor] = []
+
+        for A_t, X_t in zip(A_list, X_list):
+            # evolve weights
+            Q = self.evolve_weights(Q)  # [in_feats, out_feats]
+            # apply GCN step: σ(Â_t X_t Q_t)
+            # X_t: [N_t, in_feats]  -> X_t @ Q: [N_t, out_feats]
+            H_t = X_t @ Q
+            H_t = A_t @ H_t  # A_t: [N_t, N_t]
+            H_t = self.activation(H_t)
+            out_seq.append(H_t)
+
+        return out_seq
+
+
+# ====== EvolveGCN ======
+
+
+class EvolveGCN(nn.Module):
+    """EvolveGCN-O based on egcn_o.py, adapted to PyG + time_step.
+
+    Expected input (per full temporal graph):
+        x         : [num_nodes, in_channels]
+        edge_index: [2, num_edges]
+        time_step : [num_nodes] (discrete index for each node)
+
+    Returns logits for all nodes across all time steps.
+    """
+
     requires_time = True
 
-    def __init__(self, in_channels: int,
-                 hidden_channels: int = 128,
-                 out_channels: int = 2,
-                 dropout: float = 0.5) -> None:
+    def __init__(
+        self,
+        in_channels: int,
+        hidden_channels: int = 128,
+        out_channels: int = 2,
+        dropout: float = 0.5,
+    ) -> None:
         super().__init__()
-        # EvolveGCNO typically keeps the same input/output dimensionality
-        self.recurrent = EvolveGCNO(in_channels, in_channels)
-        self.proj = nn.Linear(in_channels, hidden_channels)
+
+        # As in EvolveGCN-O: two stacked GRCU layers
+        self.grcu1 = GRCU(in_feats=in_channels, out_feats=hidden_channels, activation=F.relu)
+        self.grcu2 = GRCU(in_feats=hidden_channels, out_feats=hidden_channels, activation=F.relu)
+
         self.classifier = nn.Linear(hidden_channels, out_channels)
         self.dropout = dropout
         self.out_dim = out_channels
-        self.history: Dict = {}
 
-    def _step_once(self, x_t: torch.Tensor, edge_index_t: torch.Tensor) -> torch.Tensor:
-        """Apply one EvolveGCN step on a single snapshot."""
-        h_t = self.recurrent(x_t, edge_index_t)
-        h_t = F.relu(self.proj(h_t))
-        h_t = F.dropout(h_t, p=self.dropout, training=self.training)
-        logits_t = self.classifier(h_t)
-        return logits_t
+    @staticmethod
+    def _build_normalized_adj(edge_index_t: Tensor, num_nodes_t: int, device) -> Tensor:
+        """
+        Build a dense normalized adjacency matrix Â_t ∈ R^{N_t x N_t} with self-loops,
+        using symmetric normalization: Â = D^{-1/2} (A + I) D^{-1/2}.
+
+        This mimics a standard GCN normalization for a single snapshot.
+        """
+        if num_nodes_t == 0:
+            return torch.empty((0, 0), device=device)
+
+        A = torch.zeros((num_nodes_t, num_nodes_t), device=device)
+        if edge_index_t.numel() > 0:
+            src, dst = edge_index_t
+            A[src, dst] = 1.0
+            A[dst, src] = 1.0  # make the graph undirected, as in many EvolveGCN experiments
+
+        # add self-loops
+        A.fill_diagonal_(1.0)
+
+        deg = A.sum(dim=1)  # [N_t]
+        deg_inv_sqrt = deg.pow(-0.5)
+        deg_inv_sqrt[torch.isinf(deg_inv_sqrt)] = 0.0
+        D_inv_sqrt = torch.diag(deg_inv_sqrt)
+
+        A_hat = D_inv_sqrt @ A @ D_inv_sqrt  # [N_t, N_t]
+        return A_hat
 
     def reset_history(self):
-        """Reset any internal temporal state if used."""
-        self.history.clear()
+        """Provided for compatibility with train() function.
 
-    def forward(self, x, edge_index, time_step=None):
-        """Forward pass over static or temporal graph data."""
+        This model does not keep an explicit external temporal state:
+        each forward pass starts from GCN_init_weights inside GRCU.
+        """
+        # No external temporal state to reset.
+        pass
+
+    def forward(self, x: Tensor, edge_index: Tensor, time_step: Tensor = None) -> Tensor:
+        """
+        Parameters
+        ----------
+        x : Tensor
+            Node features of shape [N, in_channels].
+        edge_index : LongTensor
+            Edge index in COO format of shape [2, E].
+        time_step : LongTensor, optional
+            Time-step index for each node, shape [N]. If None, all nodes
+            are treated as belonging to a single snapshot.
+
+        Returns
+        -------
+        logits_full : Tensor
+            Logits for all nodes, shape [N, out_dim].
+        """
         device = x.device
         if time_step is None:
-            return self._step_once(x, edge_index)
+            # If forward is called without time_step, treat the whole graph as one snapshot.
+            time_step = torch.zeros(x.size(0), dtype=torch.long, device=device)
 
         time_step = time_step.to(device)
-        logits_full = x.new_zeros((x.size(0), self.out_dim))
         unique_steps = torch.unique(time_step, sorted=True)
+
+        # Build A_list and X_list for each snapshot, and keep mapping from time to node indices.
+        A_list: List[Tensor] = []
+        X_list: List[Tensor] = []
+        node_indices_per_t: List[Tensor] = []
 
         for t in unique_steps:
             node_idx_t = (time_step == t).nonzero(as_tuple=True)[0]
             if node_idx_t.numel() == 0:
                 continue
 
-            # Cumulative window: nodes with time <= t
-            node_idx_leq_t = (time_step <= t).nonzero(as_tuple=True)[0]
-            sub_ei_all, _ = subgraph(node_idx_leq_t, edge_index, relabel_nodes=True)
+            node_indices_per_t.append(node_idx_t)
 
-            # Map global node indices to local indices in the cumulative subgraph
-            remap = -torch.ones(x.size(0), dtype=torch.long, device=device)
-            remap[node_idx_leq_t] = torch.arange(node_idx_leq_t.numel(), device=device)
+            # Subgraph of nodes at time t only
+            sub_ei_t, _ = subgraph(node_idx_t, edge_index, relabel_nodes=True)
+            N_t = node_idx_t.numel()
+            A_t = self._build_normalized_adj(sub_ei_t, N_t, device=device)  # [N_t, N_t]
+            X_t = x[node_idx_t]  # [N_t, in_channels]
 
-            x_all = x[node_idx_leq_t]
-            logits_all = self._step_once(x_all, sub_ei_all)
+            A_list.append(A_t)
+            X_list.append(X_t)
 
-            # Extract logits for nodes at time t
-            local_idx_t = remap[node_idx_t]
-            logits_t = logits_all[local_idx_t]
+        # If there are no nodes (edge case), return zeros.
+        if len(A_list) == 0:
+            return x.new_zeros((x.size(0), self.out_dim))
+
+        # Two GRCU layers in sequence, as in the original EGCN implementation.
+        H_list = self.grcu1(A_list, X_list)      # list: H_t^1
+        H_list = self.grcu2(A_list, H_list)      # list: H_t^2
+
+        # Compute logits for all nodes at each time step.
+        logits_full = x.new_zeros((x.size(0), self.out_dim))
+        for node_idx_t, H_t in zip(node_indices_per_t, H_list):
+            H_t = F.dropout(H_t, p=self.dropout, training=self.training)
+            logits_t = self.classifier(H_t)
             logits_full[node_idx_t] = logits_t
 
         return logits_full
@@ -243,6 +423,9 @@ class DySAT(nn.Module):
             seq[i, L - 1, :] = h_t[i]
             pad[i, L - 1] = False
         return seq, pad
+        
+    def reset_history(self):
+        self._banks.clear()
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, time_step: torch.Tensor = None) -> torch.Tensor:
         """Forward pass for temporal graph data."""
@@ -253,9 +436,6 @@ class DySAT(nn.Module):
         time_step = time_step.to(device)
         logits_full = x.new_zeros((x.size(0), self.out_dim))
         unique_steps: List[int] = torch.unique(time_step, sorted=True).tolist()
-
-        # Reset history at the beginning of a new run
-        self._banks.clear()
 
         for t in unique_steps:
             node_idx = (time_step == t).nonzero(as_tuple=True)[0]
