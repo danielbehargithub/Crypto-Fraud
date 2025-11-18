@@ -1,0 +1,9 @@
+torch
+torch-geometric
+torch-geometric-temporal
+numpy
+pandas
+scikit-learn
+PyYAML
+matplotlib
+networkx

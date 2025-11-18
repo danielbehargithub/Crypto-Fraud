@@ -4,6 +4,13 @@ This repository contains an end-to-end framework for detecting illicit cryptocur
 of Graph Neural Networks (GNNs) and Active Learning (AL). The project evaluates how graph structure, temporal dynamics, 
 and selective label acquisition influence model performance under severe label scarcity, using the Elliptic Bitcoin 
 transaction dataset.
+
+# add project report here
+
+
+🔗 [Jump to Setup Instructions](#Setup-Instructions)
+---
+
 ## Project Overview
 
 The **[Elliptic dataset](https://www.kaggle.com/datasets/ellipticco/elliptic-data-set)** 
@@ -30,25 +37,6 @@ We evaluate:
 - Analyze convergence, label-efficiency, minority sampling behavior, and feature vs. structure importance.
 - Provide a fully reproducible code base with clean configuration files.
 
-## 📂 Repository Structure
-
-```
-Crypto_Fraud
-├── code/
-│   ├── active_learning.py/
-│   ├── data.py/
-│   ├── models.py/
-│   ├── run_experiments.py
-│   ├── training.py/
-│   │── visual.py
-│
-│
-├── configs/
-├── results/
-├── vizualizations/
-├── README.md
-└── requirements.txt
-```
 
 ## Models
 
@@ -137,12 +125,6 @@ Metrics:
 - AUPRC  
 - Performance vs labeling budget
 
-## 🧾 How to Run
-
-```
-pip install -r requirements.txt
-python code/run_experiments.py --config configs/config_active.yaml
-```
 
 ## 📈 Key Findings
 
@@ -156,3 +138,131 @@ python code/run_experiments.py --config configs/config_active.yaml
 - Dynamic AL  
 - GAT/HGT models  
 - Temporal rollouts  
+
+
+---
+## 📂 Repository Structure
+
+```
+Crypto_Fraud
+├── code/
+│   ├── active_learning.py/
+│   ├── data.py/
+│   ├── models.py/
+│   ├── run_experiments.py
+│   ├── training.py/
+│   │── visual.py
+│
+│
+├── configs/
+├── elliptic_bitcoin_dataset/
+├── results/
+├── vizualizations/
+├── README.md
+└── requirements.txt
+```
+
+---
+
+## Setup Instructions
+
+Follow these steps to run the project from scratch.
+
+---
+
+### **1. Clone the repository**
+
+Open a terminal and run:
+
+```bash
+git clone https://github.com/danielbehargithub/Crypto-Fraud.git
+cd Crypto-Fraud
+```
+
+---
+
+### **2. Download and place the Elliptic dataset**
+
+Due to licensing restrictions, the Elliptic dataset is **not** included in this repository.
+
+1. Download the dataset manually from Kaggle:  
+   🔗 https://www.kaggle.com/datasets/ellipticco/elliptic-data-set  
+
+2. Extract the files into the following folder inside the project:
+
+```
+elliptic_bitcoin_dataset/
+```
+
+Final structure should look like:
+
+```
+Crypto_Fraud/
+├── elliptic_bitcoin_dataset/
+│   ├── elliptic_txs_classes.csv
+│   ├── elliptic_txs_features.csv
+│   ├── elliptic_txs_edgelist.csv
+```
+
+---
+
+### **3. Install dependencies**
+
+From the project root, run:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+### **4. Configure the experiment**
+
+The main configuration file is located at:
+
+```
+configs/config_run_experiments.yaml
+```
+
+In this file you can modify the following parameters:
+
+```yaml
+# Model / Graph combinations
+graph_modes: ["dag", "undirected"]   # graph construction: DAG (direct) or undirected
+model_names: ["GCN", "MLP"]          # models to run: GCN, MLP, EVOLVEGCN, DYSAT
+feature_sets: ["local", "all"]       # feature configuration: local-only or all features
+split_types: ["temporal"]            # data split type: temporal or random
+
+# Active Learning Methods
+al_methods:
+  - "entropy"
+  - "random"
+  - "cmcs"
+  - "sequential"
+```
+
+---
+
+### **5. Run the experiments**
+
+```bash
+python code/run_experiments.py
+```
+
+---
+
+### **6. Generate visualizations**
+
+```bash
+python code/visual.py
+```
+
+All plots will be saved under:
+
+```
+visualizations/
+```
+
+---
+
+Enjoy exploring illicit transaction detection using GNNs + Active Learning 🎯
