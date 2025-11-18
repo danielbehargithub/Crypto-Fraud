@@ -1,5 +1,5 @@
 method,mean_rank,mean_test_f1,proportional_mean_test_f1
-entropy,4.5,0.397,0.5
-random,4.5,0.4,0.508
-sequential,4.5,0.393,0.488
-umcs,4.5,0.373,0.428
+sequential,4.667,0.383,0.518
+cmcs,6.667,0.348,0.424
+entropy,7.333,0.338,0.397
+random,7.333,0.335,0.389
