@@ -533,7 +533,7 @@ def run_all_visualizations():
         passive_csv_path=passive_csv,
         facet_col="model",
         line_col="method",
-        metric="best_val_f1",
+        metric="best_test_f1",
         label_col="n_labeled",
         filters={"graph_mode": "dag", "features_set": "local"},
     )
