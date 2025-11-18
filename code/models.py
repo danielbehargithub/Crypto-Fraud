@@ -175,7 +175,7 @@ class GRCU(nn.Module):
         return out_seq
 
 
-# ====== EvolveGCN wrapper adapted to your (x, edge_index, time_step) API ======
+# ====== EvolveGCN ======
 
 
 class EvolveGCN(nn.Module):
@@ -237,7 +237,7 @@ class EvolveGCN(nn.Module):
         return A_hat
 
     def reset_history(self):
-        """Provided for compatibility with your train() function.
+        """Provided for compatibility with train() function.
 
         This model does not keep an explicit external temporal state:
         each forward pass starts from GCN_init_weights inside GRCU.
