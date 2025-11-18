@@ -41,31 +41,31 @@ active_learning:
     EVOLVEGCN:
       local:
         dag:
-          max_epochs: 50
+          max_epochs: 15
           patience: 5
         undirected:
-          max_epochs: 50
+          max_epochs: 15
           patience: 5
       all:
         dag:
-          max_epochs: 50
+          max_epochs: 15
           patience: 5
         undirected:
-          max_epochs: 50
+          max_epochs: 15
           patience: 5
 
     DYSAT:
       local:
         dag:
-          max_epochs: 50
+          max_epochs: 10
           patience: 5
         undirected:
-          max_epochs: 50
+          max_epochs: 10
           patience: 5
       all:
         dag:
-          max_epochs: 50
+          max_epochs: 10
           patience: 5
         undirected:
-          max_epochs: 50
+          max_epochs: 10
           patience: 5

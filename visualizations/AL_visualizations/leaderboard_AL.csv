@@ -1,3 +1,5 @@
-model,mean_rank,mean_test_f1,proportional_mean_test_f1
-AL-MLP,2.5,0.528,0.894
-AL-GCN,6.5,0.253,0.068
+method,mean_rank,mean_test_f1,proportional_mean_test_f1
+entropy,4.5,0.397,0.5
+random,4.5,0.4,0.508
+sequential,4.5,0.393,0.488
+umcs,4.5,0.373,0.428
