@@ -10,48 +10,48 @@ active_learning:
       local:
         dag:
           max_epochs: 50
-          patience: 5
+          patience: 10
         undirected:
           max_epochs: 50
-          patience: 5
+          patience: 10
       all:
         dag:
           max_epochs: 50
-          patience: 5
+          patience: 10
         undirected:
           max_epochs: 50
-          patience: 5
+          patience: 10
 
     GCN:
       local:
         dag:
           max_epochs: 50
-          patience: 5
+          patience: 10
         undirected:
           max_epochs: 50
-          patience: 5
+          patience: 10
       all:
         dag:
           max_epochs: 50
-          patience: 5
+          patience: 10
         undirected:
           max_epochs: 50
-          patience: 5
+          patience: 10
 
     EVOLVEGCN:
       local:
         dag:
-          max_epochs: 15
+          max_epochs: 10
           patience: 5
         undirected:
-          max_epochs: 15
+          max_epochs: 10
           patience: 5
       all:
         dag:
-          max_epochs: 15
+          max_epochs: 10
           patience: 5
         undirected:
-          max_epochs: 15
+          max_epochs: 10
           patience: 5
 
     DYSAT:

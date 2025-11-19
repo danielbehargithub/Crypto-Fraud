@@ -125,20 +125,38 @@ Metrics:
 - AUPRC  
 - Performance vs labeling budget
 
-
+---
 ## 📈 Key Findings
 
-- MLP strongest baseline  
-- GNNs underperform due to weak graph signal  
-- AL reaches passive performance with fewer labels  
-- CMCS + Sequential achieve highest illicit ratios  
+- MLP is the strongest baseline, outperforming all GNNs on passive learning.
 
+
+- Graph signal in Elliptic is weak, causing GCN/EvolveGCN/DySAT to underperform relative to feature-only models.
+
+
+- Active Learning improves label efficiency- all models reach passive performance with far fewer labels.
+
+
+- CMCS & Sequential increase illicit coverage, but do not improve F1; Random correlates best with actual F1 gains.
+
+
+- Artificial minority balancing does not help and often destabilizes training.
+---
 ## 🔮 Future Work
 
-- Dynamic AL  
-- GAT/HGT models  
-- Temporal rollouts  
+- Richer AL experiments: more AL rounds, multiple random seeds, alternative temporal splits.
 
+ 
+- Test stronger temporal GNNs (e.g., DySAT) in AL method under full training budgets to check if GNNs can close the gap.
+
+
+- Explore minority-learning mechanisms: understand which models naturally detect rare illicit patterns without forced balancing.
+
+
+- Cross-dataset validation: determine if Elliptic’s weak graph signal is dataset-specific or general to AML graphs.
+
+
+- Investigate temporally-aware AL strategies designed for streaming or sequential transaction environments.
 
 ---
 ## 📂 Repository Structure
