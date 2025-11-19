@@ -1,0 +1,5 @@
+method,mean_corr_partial,median_corr_partial
+cmcs,0.055,-0.081
+entropy,0.218,0.146
+random,0.592,0.543
+sequential,-0.273,-0.356

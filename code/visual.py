@@ -321,7 +321,7 @@ def plot_al_by_model(
                 xmax=x_max,
                 linestyles="--",
                 linewidth=1.5,
-                label="Passive baseline"
+                label="Passive Result"
             )
 
         plt.title(f"{fv} F1 vs Number of Labeled Samples")
@@ -416,6 +416,7 @@ def compute_balance_partial_corr(
     illicit_col: str = "n_illicit",
     f1_col: str = "best_test_f1",
     output_path: str = "visualizations/AL_visualizations/illicit_balance_effect.csv",
+    output_path_summary: str = "visualizations/AL_visualizations/illicit_balance_summary.csv",
 ):
     """
     For each (model, method), compute:
@@ -470,9 +471,24 @@ def compute_balance_partial_corr(
     # round for readability
     for c in out.select_dtypes(include="number").columns:
         out[c] = out[c].round(3)
-
     out.to_csv(output_path, index=False)
-    return out
+
+    summary_rows = []
+    for method, sub in out.groupby(al_col):
+        vals = sub["corr_partial"].dropna().values
+
+        summary_rows.append({
+            al_col: method,
+            "mean_corr_partial": np.mean(vals),
+            "median_corr_partial": np.median(vals),
+        })
+
+    out_summary = pd.DataFrame(summary_rows)
+    for c in out_summary.select_dtypes(include="number").columns:
+        out_summary[c] = out_summary[c].round(3)
+    out_summary.to_csv(output_path_summary, index=False)
+
+    return out, out_summary
 
 def run_all_visualizations():
     """
@@ -512,7 +528,9 @@ def run_all_visualizations():
     compute_balance_partial_corr(
         csv_path=curves_csv,
         output_path=AL_VIS_DIR / FILES["illicit_balance_effect"],
+        output_path_summary=AL_VIS_DIR / FILES["illicit_balance_summary"],
     )
+
 
     plot_illicit_ratio(
         csv_path=curves_csv,

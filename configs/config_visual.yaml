@@ -20,3 +20,4 @@ visual:
 
     elliptic_subgraph: "elliptic_subgraph.png"
     illicit_balance_effect: "illicit_balance_effect.csv"
+    illicit_balance_summary: "illicit_balance_summary.csv"
