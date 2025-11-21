@@ -5,7 +5,7 @@ of Graph Neural Networks (GNNs) and Active Learning (AL). The project evaluates 
 and selective label acquisition influence model performance under severe label scarcity, using the Elliptic Bitcoin 
 transaction dataset.
 
-# add project report here
+[📄 Project Report](project_report.pdf)
 
 
 🔗 [Jump to Setup Instructions](#Setup-Instructions)
