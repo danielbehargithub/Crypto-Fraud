@@ -187,6 +187,7 @@ def compute_leaderboard(
     csv_path: str,
     metric: str = "test_f1",
     group_col: str = "model",
+    extra_metrics: list[str] | None = None,
     output_path: str | Path = None,
 ):
     """
@@ -223,6 +224,19 @@ def compute_leaderboard(
             "mean_metric": f"mean_{metric}",
         }
     )
+
+    if extra_metrics:
+        for m in extra_metrics:
+            if m not in df.columns:
+                raise ValueError(f"Column '{m}' not found in CSV")
+            extra_summary = (
+                df.groupby(group_col)[m]
+                .mean()
+                .reset_index()
+                .rename(columns={m: f"mean_{m}"})
+            )
+            leaderboard = leaderboard.merge(extra_summary, on=group_col)
+
     for col in leaderboard.select_dtypes(include="number").columns:
         leaderboard[col] = leaderboard[col].round(3)
 
@@ -522,6 +536,7 @@ def run_all_visualizations():
         csv_path=passive_csv,
         metric="test_f1",
         group_col="model",
+        extra_metrics=["auprc"],
         output_path=VIS_DIR / FILES["leaderboard_passive"],
     )
 
@@ -542,6 +557,7 @@ def run_all_visualizations():
         csv_path=active_csv,
         metric="test_f1",
         group_col="method",
+        extra_metrics=["auprc"],
         output_path=AL_VIS_DIR / FILES["leaderboard_active"],
     )
 
